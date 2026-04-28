@@ -21,13 +21,18 @@ export interface ActiveSalon {
   role: Role;
 }
 
-// Augments the Express request with our auth + tenant context. Guards
-// populate these in order: AuthGuard sets `identity`, TenantGuard sets
-// `salon`.
-declare module "express-serve-static-core" {
-  interface Request {
-    identity?: AuthIdentity;
-    salon?: ActiveSalon;
+// Augments the Express request with our auth + tenant context via the
+// global Express namespace (the portable augmentation target — works
+// regardless of how @types/express is hoisted in node_modules).
+// Guards populate these in order: AuthGuard sets `identity`, TenantGuard
+// sets `salon`.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      identity?: AuthIdentity;
+      salon?: ActiveSalon;
+    }
   }
 }
 

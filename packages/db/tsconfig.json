@@ -5,7 +5,8 @@
     "outDir": "dist",
     "composite": true,
     "module": "CommonJS",
-    "moduleResolution": "Node"
+    "moduleResolution": "Node",
+    "types": ["node"]
   },
   "include": ["src/**/*", "prisma/**/*", "test/**/*"]
 }
