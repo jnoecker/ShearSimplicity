@@ -151,6 +151,12 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       case EventType.APPOINTMENT_CREATED:
         await this.smsHandlers.handleAppointmentCreated(event);
         return;
+      case EventType.APPOINTMENT_RESCHEDULED:
+        await this.smsHandlers.handleAppointmentRescheduled(event);
+        return;
+      case EventType.APPOINTMENT_CANCELLED:
+        await this.smsHandlers.handleAppointmentCancelled(event);
+        return;
       default:
         // Unknown event types are silently completed so a bad row can't wedge
         // the worker. Log so we notice the typo / missing handler.

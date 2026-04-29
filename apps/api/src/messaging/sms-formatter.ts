@@ -26,6 +26,51 @@ export function formatConfirmationSms(input: AppointmentForSms): string {
   );
 }
 
+interface RescheduleForSms {
+  previousStartAt: Date;
+  newStartAt: Date;
+  staffFirstName: string;
+  clientFirstName: string;
+  salonName: string;
+  salonTimezone: string;
+}
+
+export function formatRescheduleSms(input: RescheduleForSms): string {
+  const fromLabel = formatDateTimeLabel(input.previousStartAt, input.salonTimezone);
+  const toLabel = formatDateTimeLabel(input.newStartAt, input.salonTimezone);
+  return (
+    `${input.salonName}: Hi ${input.clientFirstName}, your appointment ` +
+    `with ${input.staffFirstName} on ${fromLabel} has been moved to ${toLabel}. ` +
+    `Reply STOP to opt out.`
+  );
+}
+
+interface CancelForSms {
+  startAt: Date;
+  staffFirstName: string;
+  clientFirstName: string;
+  salonName: string;
+  salonTimezone: string;
+}
+
+export function formatCancelSms(input: CancelForSms): string {
+  const when = formatDateTimeLabel(input.startAt, input.salonTimezone);
+  return (
+    `${input.salonName}: Hi ${input.clientFirstName}, your appointment ` +
+    `with ${input.staffFirstName} on ${when} has been cancelled. ` +
+    `Reply STOP to opt out.`
+  );
+}
+
+function formatDateTimeLabel(instant: Date, timeZone: string): string {
+  // "Thu Apr 30 at 1:00 PM" — combined so reschedule/cancel bodies stay
+  // inside one segment with both before/after.
+  return `${formatDateLabel(instant, timeZone)} at ${formatTimeLabel(
+    instant,
+    timeZone,
+  )}`;
+}
+
 export function firstName(displayName: string): string {
   // The displayName is "First Last" / "First" / "First M. Last" — anything
   // before the first whitespace is the bit we'd address the client by.

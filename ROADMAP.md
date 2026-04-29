@@ -161,14 +161,38 @@ Outbound first, inbound second. Reminder jobs separate from confirmations.
 
 **Out of scope (intentional):** reminder scheduling, reschedule/cancel SMS, message-history UI, per-salon Twilio numbers, deep-link tokens. Those land in 4b.
 
-### Phase 4b — Reminders + per-salon numbers + history UI ⬜
+### Phase 4b-1 — Reschedule + cancel notifications 🚧
 
-- BullMQ-backed reminder jobs scheduled at appointment creation, cancelled on reschedule/cancel
-- Per-salon Twilio numbers stored on `Salon` so inbound routes by `To` instead of by sender phone
-- Reschedule / cancel notifications (new outbox event types and handlers)
+- New outbox emissions in `appointments.service.ts` for reschedule + cancel
+  (alongside the existing domain events)
+- New handler methods on `SmsHandlersService` mirror `handleAppointmentCreated`,
+  share the INSERT-then-send dedup helper, render bodies with old → new for
+  reschedule and the cancelled time for cancel
+- Outbox worker dispatch routes the two new event types
+- Vitest coverage for fresh send, retry dedup, missing-payload skip,
+  status-already-cancelled-on-reschedule skip, no-phone skip
+
+### Phase 4b-2 — Reminder scheduling ⬜
+
+- Reuse `OutboxEvent.nextAttemptAt` for deferred sends (cheaper than pulling
+  in BullMQ for one feature; the outbox already has scheduling primitives)
+- New event type `appointment.reminder_due` emitted on create with
+  `nextAttemptAt = startAt - 24h`; reschedule updates the time, cancel marks
+  the row `COMPLETED`
+- Worker tick already polls by `nextAttemptAt`, so no leasing changes needed
+
+### Phase 4b-3 — Per-salon Twilio numbers ⬜
+
+- New `Salon.smsFromNumber` field + settings UI
+- Inbound webhook routes by `To` header instead of by sender phone
+- Removes the single-shared-number caveat from 4a
+
+### Backlog (was 4b, deferred to 4c or beyond)
+
 - Cancellation / reschedule deep links signed with short-lived tokens
 - Message history per client (UI)
-- Switch outbox worker from poll-and-update to BullMQ leasing with proper heartbeat
+- BullMQ migration (only if we hit operational pain — outbox `nextAttemptAt`
+  is good enough for 4b-2)
 
 ### A2P 10DLC compliance — separate workstream
 

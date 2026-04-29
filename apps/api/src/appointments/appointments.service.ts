@@ -289,6 +289,22 @@ export class AppointmentsService {
         },
         actorUserId,
       });
+      // Outbox row drives the reschedule SMS in 4b-1. Minimal payload: id +
+      // salonId + previousStartAt. The handler looks up the appointment for
+      // current state (new startAt, services, staff) and uses
+      // previousStartAt only for the "moved from X to Y" wording.
+      await tx.outboxEvent.create({
+        data: {
+          salonId,
+          eventType: EventType.APPOINTMENT_RESCHEDULED,
+          payload: {
+            id,
+            salonId,
+            previousStartAt: existing.startAt.toISOString(),
+          } as Prisma.InputJsonValue,
+          status: OutboxStatus.PENDING,
+        },
+      });
       return updated;
     });
   }
@@ -326,6 +342,18 @@ export class AppointmentsService {
           reason: input.reason ?? null,
         },
         actorUserId,
+      });
+      // Outbox row drives the cancel SMS in 4b-1. Cancel doesn't move the
+      // appointment, so no previousStartAt is needed — the handler reads
+      // the current row's startAt for the "appointment on X has been
+      // cancelled" wording.
+      await tx.outboxEvent.create({
+        data: {
+          salonId,
+          eventType: EventType.APPOINTMENT_CANCELLED,
+          payload: { id, salonId } as Prisma.InputJsonValue,
+          status: OutboxStatus.PENDING,
+        },
       });
       return updated;
     });
