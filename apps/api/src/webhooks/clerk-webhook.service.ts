@@ -85,10 +85,10 @@ export class ClerkWebhookService {
         await this.apply(tx, event);
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002"
-      ) {
+      // Narrow to the idempotency-key uniqueness violation. A P2002 from
+      // anywhere else inside `apply` is a real error and must propagate so
+      // svix retries it — otherwise we'd silently drop genuine failures.
+      if (isProcessedWebhookEventDuplicate(err)) {
         this.logger.log(`Clerk event ${eventId} already processed; skipping`);
         return;
       }
@@ -265,6 +265,22 @@ export class ClerkWebhookService {
       }
     }
   }
+}
+
+function isProcessedWebhookEventDuplicate(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== "P2002") return false;
+  // Prisma reports `target` as either an array of column names or the
+  // constraint name string, depending on adapter version. Match either shape
+  // against our (source, externalEventId) unique index.
+  const target = (err.meta as { target?: unknown } | undefined)?.target;
+  if (Array.isArray(target)) {
+    return target.includes("source") && target.includes("externalEventId");
+  }
+  if (typeof target === "string") {
+    return target.includes("source") && target.includes("externalEventId");
+  }
+  return false;
 }
 
 function primaryEmail(data: {

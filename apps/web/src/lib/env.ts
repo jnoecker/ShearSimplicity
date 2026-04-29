@@ -1,3 +1,5 @@
+import "server-only";
+
 // Server-side env access. Throws on first access if a required value is
 // missing — surfaces config errors at boot rather than at request time.
 
