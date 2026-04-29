@@ -9,6 +9,7 @@ import {
 import {
   ScheduleView,
   type ScheduleAppointment,
+  type SchedulePayment,
   type ScheduleStaff,
   type ScheduleService,
 } from "./_components/schedule-view";
@@ -43,6 +44,8 @@ export default async function SchedulePage({
     month?: string;
     staff?: string;
     client?: string;
+    paid?: string;
+    paymentCancelled?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -63,6 +66,14 @@ export default async function SchedulePage({
     apiFetch<ScheduleStaff[]>("/staff"),
     apiFetch<ScheduleService[]>("/services"),
   ]);
+
+  // Fetch the day's payments after the appointment query so we can scope
+  // by ID. The /payments endpoint hard-caps the list at 500 ids per
+  // request and 400s on over-limit input — chunk into matching batches
+  // so a wildly busy salon doesn't lose rows from a silent truncation.
+  const payments = await fetchPaymentsForAppointments(
+    appointments.map((a) => a.id),
+  );
 
   const prevIso = shiftIsoDate(isoDate, -1, tz);
   const nextIso = shiftIsoDate(isoDate, 1, tz);
@@ -93,6 +104,9 @@ export default async function SchedulePage({
         appointments={appointments}
         staff={staff.filter((s) => s.isActive)}
         services={services}
+        payments={payments}
+        paidAppointmentId={params.paid ?? null}
+        paymentCancelledAppointmentId={params.paymentCancelled ?? null}
       />
       {bookOpen && bookingData && (
         <BookingModalMount
@@ -113,6 +127,28 @@ export default async function SchedulePage({
       )}
     </>
   );
+}
+
+// Stay under the API's MAX_LOOKUP_IDS (500). 400 leaves a comfortable
+// margin and keeps the URL short enough to not stress any proxy.
+const PAYMENTS_LOOKUP_BATCH = 400;
+
+async function fetchPaymentsForAppointments(
+  appointmentIds: string[],
+): Promise<SchedulePayment[]> {
+  if (appointmentIds.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < appointmentIds.length; i += PAYMENTS_LOOKUP_BATCH) {
+    chunks.push(appointmentIds.slice(i, i + PAYMENTS_LOOKUP_BATCH));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      apiFetch<SchedulePayment[]>("/payments", {
+        query: { appointmentIds: chunk.join(",") },
+      }),
+    ),
+  );
+  return results.flat();
 }
 
 async function loadBookingData({

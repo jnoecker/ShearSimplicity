@@ -13,6 +13,7 @@ import {
   cancelAppointment,
   completeAppointment,
   rescheduleAppointment,
+  startCheckoutAction,
   transitionAppointment,
 } from "../_actions";
 
@@ -73,6 +74,24 @@ export interface ScheduleAppointment {
   services: ScheduleAppointmentService[];
 }
 
+export type SchedulePaymentStatus =
+  | "PENDING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "REFUNDED"
+  | "PARTIALLY_REFUNDED"
+  | "CANCELLED";
+
+export interface SchedulePayment {
+  id: string;
+  appointmentId: string;
+  status: SchedulePaymentStatus;
+  amountCents: number;
+  currency: string;
+  receiptUrl: string | null;
+  capturedAt: string | null;
+}
+
 interface Props {
   isoDate: string;
   timezone: string;
@@ -83,6 +102,13 @@ interface Props {
   appointments: ScheduleAppointment[];
   staff: ScheduleStaff[];
   services: ScheduleService[];
+  /** One row per appointment that has any payment activity, deduped by the
+   *  API to the highest-priority status (SUCCEEDED wins over PENDING). */
+  payments: SchedulePayment[];
+  /** When set, the user just returned from a successful Stripe redirect for
+   *  this appointment id — the view shows a banner until they dismiss it. */
+  paidAppointmentId: string | null;
+  paymentCancelledAppointmentId: string | null;
 }
 
 const LEGEND: Array<{ k: CategoryKind; l: string }> = [
@@ -100,6 +126,7 @@ interface RenderBlock {
   startMin: number;
   durationMin: number;
   kind: CategoryKind;
+  payment: SchedulePayment | null;
 }
 
 function staffGradient(index: number): string {
@@ -116,10 +143,27 @@ export function ScheduleView({
   appointments,
   staff,
   services,
+  payments,
+  paidAppointmentId,
+  paymentCancelledAppointmentId,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const paymentByAppointmentId = useMemo(() => {
+    const map = new Map<string, SchedulePayment>();
+    for (const p of payments) map.set(p.appointmentId, p);
+    return map;
+  }, [payments]);
+
+  function dismissReturnBanner() {
+    // Drop the paid / paymentCancelled query params so the banner doesn't
+    // re-show on refresh. Keep the existing date param.
+    const qs = new URLSearchParams();
+    qs.set("date", isoDate);
+    router.replace(`/schedule?${qs.toString()}`);
+  }
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hoverDrop, setHoverDrop] = useState<{
     staffIndex: number;
@@ -175,10 +219,11 @@ export function ScheduleView({
         startMin,
         durationMin: Math.max(SLOT_MIN, endMin - startMin),
         kind,
+        payment: paymentByAppointmentId.get(a.id) ?? null,
       });
     }
     return out;
-  }, [appointments, staff, kindForServiceId, isoDate, timezone]);
+  }, [appointments, staff, kindForServiceId, isoDate, timezone, paymentByAppointmentId]);
 
   const selected = useMemo(
     () =>
@@ -259,6 +304,21 @@ export function ScheduleView({
           details.
         </p>
       </header>
+
+      {paidAppointmentId && (
+        <PaymentReturnBanner
+          tone="success"
+          message="Payment received. Stripe is finalising — the status badge will update once the webhook arrives."
+          onDismiss={dismissReturnBanner}
+        />
+      )}
+      {paymentCancelledAppointmentId && (
+        <PaymentReturnBanner
+          tone="info"
+          message="Checkout was cancelled. The appointment is unchanged."
+          onDismiss={dismissReturnBanner}
+        />
+      )}
 
       <div className="ss-schedule-toolbar">
         <div className="ss-schedule-toolbar-group">
@@ -404,6 +464,7 @@ export function ScheduleView({
       {selected && (
         <DetailsPanel
           appointment={selected}
+          payment={paymentByAppointmentId.get(selected.id) ?? null}
           timezone={timezone}
           isPending={isPending}
           onClose={() => setSelectedId(null)}
@@ -512,12 +573,13 @@ function AppointmentBlock({
   onSelect: (id: string) => void;
   timezone: string;
 }) {
-  const { appointment, durationMin, kind } = block;
+  const { appointment, durationMin, kind, payment } = block;
   const heightPx = (durationMin / SLOT_MIN) * SLOT_HEIGHT - 4;
   const time = formatTimeInTimezone(new Date(appointment.startAt), timezone);
   const services = appointment.services
     .map((s) => s.serviceNameSnapshot)
     .join(" · ");
+  const paymentBadgeKind = payment ? badgeKindFor(payment.status) : null;
   return (
     <div
       className={`ss-cal-block is-${kind}${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
@@ -537,6 +599,15 @@ function AppointmentBlock({
     >
       <div className="ss-cal-block-name">
         {appointment.client.displayName}
+        {paymentBadgeKind && (
+          <span
+            className={`ss-cal-block-pay is-${paymentBadgeKind}`}
+            title={`Payment: ${payment!.status.toLowerCase()}`}
+            aria-label={`Payment ${payment!.status.toLowerCase()}`}
+          >
+            $
+          </span>
+        )}
       </div>
       <div className="ss-cal-block-svc">
         {time} · {services || "Service"}
@@ -545,14 +616,22 @@ function AppointmentBlock({
   );
 }
 
+function badgeKindFor(status: SchedulePaymentStatus): "paid" | "pending" | "issue" {
+  if (status === "SUCCEEDED") return "paid";
+  if (status === "PENDING") return "pending";
+  return "issue";
+}
+
 function DetailsPanel({
   appointment,
+  payment,
   timezone,
   isPending,
   onClose,
   onAction,
 }: {
   appointment: ScheduleAppointment;
+  payment: SchedulePayment | null;
   timezone: string;
   isPending: boolean;
   onClose: () => void;
@@ -623,6 +702,10 @@ function DetailsPanel({
           <p>{appointment.internalNotes}</p>
         </div>
       )}
+      <PaymentSection
+        appointmentId={appointment.id}
+        payment={payment}
+      />
       <div className="ss-detail-actions">
         {advanceTarget.map((t) => (
           <button
@@ -672,6 +755,113 @@ function DetailsPanel({
       </div>
     </div>
   );
+}
+
+function PaymentSection({
+  appointmentId,
+  payment,
+}: {
+  appointmentId: string;
+  payment: SchedulePayment | null;
+}) {
+  // The startCheckoutAction server action redirects via redirect() — it
+  // throws NEXT_REDIRECT on success, so this state only flips back when
+  // the API rejects (already paid → 409, missing services → 400).
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  async function pay() {
+    setSubmitting(true);
+    setErrorMsg(null);
+    const result = await startCheckoutAction(appointmentId);
+    // If we got here, the redirect didn't fire — that means the action
+    // failed (the success path throws and never returns).
+    setSubmitting(false);
+    setErrorMsg(result.message ?? "Couldn't start checkout");
+  }
+
+  const succeeded = payment?.status === "SUCCEEDED";
+  const failed =
+    payment?.status === "FAILED" ||
+    payment?.status === "CANCELLED" ||
+    payment?.status === "REFUNDED" ||
+    payment?.status === "PARTIALLY_REFUNDED";
+  const pending = payment?.status === "PENDING";
+
+  return (
+    <div className="ss-detail-section ss-detail-payment">
+      <div className="ss-detail-label">Payment</div>
+      {payment && (
+        <div className="ss-detail-payment-row">
+          <span className={`ss-tag is-pay-${payment.status.toLowerCase()}`}>
+            {payment.status.replace("_", " ").toLowerCase()}
+          </span>
+          <span className="ss-detail-payment-amount">
+            {formatPrice(payment.amountCents, payment.currency)}
+          </span>
+        </div>
+      )}
+      {succeeded && payment?.receiptUrl && (
+        <a
+          className="ss-link"
+          href={payment.receiptUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View Stripe receipt ↗
+        </a>
+      )}
+      {!succeeded && (
+        <button
+          type="button"
+          className="ss-btn ss-btn-primary"
+          disabled={submitting}
+          onClick={pay}
+        >
+          {submitting
+            ? "Starting checkout…"
+            : pending
+              ? "Resume payment"
+              : failed
+                ? "Try again"
+                : "Pay now"}
+        </button>
+      )}
+      {errorMsg && <div className="ss-form-error">{errorMsg}</div>}
+    </div>
+  );
+}
+
+function PaymentReturnBanner({
+  tone,
+  message,
+  onDismiss,
+}: {
+  tone: "success" | "info";
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className={`ss-return-banner is-${tone}`} role="status">
+      <span>{message}</span>
+      <button
+        type="button"
+        className="ss-return-banner-close"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function formatPrice(cents: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
 }
 
 function ChevIcon({ dir }: { dir: "left" | "right" }) {

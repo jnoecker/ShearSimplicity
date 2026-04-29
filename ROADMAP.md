@@ -223,11 +223,21 @@ PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
   `payment_intent.payment_failed` → FAILED with reason
 - Refunds + disputes intentionally deferred to 5c
 
-### Phase 5b — Pay-for-appointment UI ⬜
+### Phase 5b — Pay-for-appointment UI 🚧
 
-- "Pay now" / "Send payment link" on appointment detail
-- Client-facing receipt + status display
-- Payment column on the schedule view
+- Schedule appointment detail panel gets a payment section: status pill,
+  amount, "View Stripe receipt" link when paid, "Pay now" / "Resume" /
+  "Try again" button keyed off the most recent payment row
+- Tiny `$` badge in the corner of an appointment block — green when paid,
+  cyan when pending, red on issues
+- Return banner on `/schedule?paid=:appointmentId` (and the matching
+  `paymentCancelled=` variant) explaining the flip-from-Stripe state
+- New `GET /payments?appointmentIds=...` endpoint backing the schedule
+  view's per-appointment payment lookup; deduped server-side to the
+  highest-priority status (SUCCEEDED > FAILED > … > PENDING)
+- Dev-only Stripe simulator at `/dev/checkout` — the dev provider's URL
+  now embeds success/cancel URLs so the page can complete the flow with
+  a real synthetic webhook event and redirect, mirroring production
 
 ### Phase 5c — Tips + refunds ⬜
 
