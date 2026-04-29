@@ -11,6 +11,7 @@
     "test": "echo 'test: noop'"
   },
   "dependencies": {
+    "@clerk/nextjs": "6",
     "@shearsimp/shared": "workspace:*",
     "next": "^15.1.0",
     "react": "^19.0.0",

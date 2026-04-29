@@ -53,17 +53,22 @@ PR: [#1](https://github.com/jnoecker/ShearSimplicity/pull/1)
 - Enum parity test between `@shearsimp/shared` and Prisma
 - `dotenv-cli` so Prisma scripts pick up the root `.env`
 
-## Phase 1.5 — Clerk Organizations 🟡
+## Phase 1.5 — Clerk Organizations 🚧
 
 Replace `DevAuthProvider` with a real auth flow without changing controllers.
 
-- `@clerk/nextjs` middleware + `<ClerkProvider>` in `apps/web`
-- Implement `ClerkAuthProvider` in `apps/api` using `@clerk/backend`'s `authenticateRequest` / `verifyToken`
-- Org switcher topbar wired to `useOrganizationList()`
-- Clerk webhook → mirror `User` and `Salon` rows (idempotent on Clerk event ID); link `clerkOrgId` and `clerkUserId` for lookup
-- Invite flow → `SalonMembership` row with `MembershipStatus.INVITED`
-- Sign-out + session expiry parity with the web cookie behavior
-- E2E: dev mode and Clerk mode both pass the same test suite (toggle via `AUTH_PROVIDER`)
+- `@clerk/nextjs` middleware + conditional `<ClerkProvider>` in `apps/web`
+- `ClerkAuthProvider` in `apps/api` via `@clerk/backend`'s `authenticateRequest`,
+  with self-heal `User` / `Salon` mirroring on first sign-in
+- Topbar wired to Clerk `<OrganizationSwitcher />` + `<UserButton />` in clerk mode
+- Clerk webhook → mirrors `User` / `Salon` / `SalonMembership` (idempotent on
+  Clerk event ID via shared `processed_webhook_events` table)
+- Invitations → `SalonMembership` row with `MembershipStatus.INVITED`,
+  flipped to `ACTIVE` on `organizationInvitation.accepted`
+- Sign-in/sign-up routes catchall under `[[...sign-in]]` so Clerk owns its
+  multi-step flow; dev mode still serves the cookie form at the same path
+- Vitest parity test: both providers produce equivalent `AuthIdentity` shapes
+  *(narrower than a full Playwright e2e — that's worth a future phase)*
 
 **Risks:** Clerk's Next SDK is intrusive; treat its boundary carefully so swap-back to dev mode stays cheap. Don't leak Clerk types into shared packages.
 

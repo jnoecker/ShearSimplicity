@@ -527,3 +527,22 @@ model DurationPrediction {
   @@index([modelVersion, createdAt])
   @@map("duration_predictions")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// External webhook idempotency — one row per (source, externalEventId) we've
+// already processed. Shared by every integration: Clerk (Phase 1.5),
+// Stripe (Phase 5), Twilio (Phase 4). Insert inside the same transaction
+// as the side effect; the unique constraint turns retries into no-ops.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ProcessedWebhookEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  source          String
+  externalEventId String
+  eventType       String?
+  processedAt     DateTime @default(now())
+
+  @@unique([source, externalEventId])
+  @@index([source, processedAt])
+  @@map("processed_webhook_events")
+}

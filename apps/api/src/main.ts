@@ -8,6 +8,10 @@ import { env } from "./env";
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     logger: ["error", "warn", "log"],
+    // Required for the Clerk webhook controller to access the unparsed body
+    // for svix signature verification. Body parsing still happens for other
+    // routes — `rawBody` is just kept alongside the parsed body.
+    rawBody: true,
   });
 
   app.use(cookieParser(env.DEV_AUTH_SECRET));
