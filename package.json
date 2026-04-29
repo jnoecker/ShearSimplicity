@@ -9,7 +9,7 @@
   },
   "packageManager": "pnpm@9.12.0",
   "scripts": {
-    "dev": "pnpm -r --parallel --stream dev",
+    "dev": "pnpm --filter \"./packages/*\" build && pnpm -r --parallel --stream dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

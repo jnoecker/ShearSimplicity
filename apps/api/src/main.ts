@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { Logger, ValidationPipe } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 import { env } from "./env";
@@ -19,13 +19,6 @@ async function bootstrap(): Promise<void> {
     origin: env.WEB_ORIGIN,
     credentials: true,
   });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
 
   await app.listen(env.API_PORT);
   Logger.log(

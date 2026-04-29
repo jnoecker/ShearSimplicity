@@ -4,10 +4,6 @@ import type { ZodTypeAny, infer as zInfer } from "zod";
 /**
  * Validates and transforms request payloads with a Zod schema. Schema parse
  * errors surface as a 400 with a flattened issue list.
- *
- * Pair with the global Nest ValidationPipe by listing this one explicitly on
- * the parameter — the global pipe still runs for non-Zod bodies (e.g. plain
- * primitives) and remains the place class-validator decorators are honored.
  */
 export class ZodValidationPipe<S extends ZodTypeAny>
   implements PipeTransform<unknown, zInfer<S>>
