@@ -1,10 +1,22 @@
 import { redirect } from "next/navigation";
+import { SignIn } from "@clerk/nextjs";
 import { getServerSession } from "@/lib/session";
 import { serverEnv } from "@/lib/env";
 
+// Catchall so Clerk's <SignIn routing="path"> can own /sign-in/* substates
+// (factor-one, sso-callback, verify, etc.). In dev mode we render the
+// signed-cookie form here directly.
 export default async function SignInPage() {
   const session = await getServerSession();
   if (session) redirect("/");
+
+  if (serverEnv.authProvider === "clerk") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
+        <SignIn routing="path" path="/sign-in" />
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
@@ -13,8 +25,8 @@ export default async function SignInPage() {
           Sign in
         </h1>
         <p className="mt-2 text-sm text-zinc-500">
-          Phase 1 ships with a development identity provider. Clerk
-          Organizations replaces this in Phase 1.5.
+          Development identity provider. Set <code>AUTH_PROVIDER=clerk</code> to
+          use Clerk Organizations.
         </p>
         <form action="/api/dev-sign-in" method="post" className="mt-6">
           <div className="rounded-md bg-zinc-50 px-4 py-3 text-xs leading-relaxed text-zinc-600 ring-1 ring-zinc-200">

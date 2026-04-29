@@ -54,8 +54,53 @@ pnpm dev
 `__shearsimp_dev_session` cookie. The Nest API reads the same cookie to
 resolve a fixed user + salon identity that matches the seeded fixture.
 
-To swap to Clerk later: set `AUTH_PROVIDER=clerk`, supply Clerk keys, and the
-`ClerkAuthProvider` (Phase 1.5) takes over without any controller changes.
+## Clerk setup (Phase 1.5)
+
+Switch from the dev provider to real authentication via Clerk Organizations.
+First-time Clerk users — every step is clickable.
+
+1. **Create the Clerk app**
+   - Sign in at <https://dashboard.clerk.com> and click **Create application**.
+   - Give it a name (e.g. *ShearSimplicity Dev*), pick the sign-in methods you
+     want (email + Google is a good default), then **Create application**.
+
+2. **Enable Organizations**
+   - In the dashboard sidebar: **Organizations Management** → toggle
+     **Enable organizations**.
+   - Under **Organization settings**, allow members to create their own
+     organizations (so dev sign-up creates a salon for you).
+
+3. **Copy API keys into `.env`**
+   - Dashboard → **API Keys**. Copy the **Publishable key** and **Secret key**
+     into your `.env`:
+     ```
+     AUTH_PROVIDER="clerk"
+     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+     CLERK_SECRET_KEY="sk_test_..."
+     ```
+
+4. **Wire the webhook (so orgs/users mirror into your DB)**
+   - Clerk needs a public HTTPS URL to reach your local API. Pick one:
+     - **ngrok** — `ngrok http 3001` (free tier is fine; sign up once at
+       <https://ngrok.com> for a stable subdomain).
+     - **cloudflared** — `cloudflared tunnel --url http://localhost:3001`.
+     - **localtunnel** — `npx localtunnel --port 3001`.
+   - Dashboard → **Webhooks** → **Add endpoint**.
+   - Endpoint URL: `<tunnel-url>/webhooks/clerk`.
+   - Subscribe to:
+     `user.created`, `user.updated`, `user.deleted`,
+     `organization.created`, `organization.updated`, `organization.deleted`,
+     `organizationMembership.created`, `organizationMembership.updated`, `organizationMembership.deleted`,
+     `organizationInvitation.created`, `organizationInvitation.accepted`, `organizationInvitation.revoked`.
+   - After creation, copy the **Signing Secret** into `.env` as
+     `CLERK_WEBHOOK_SECRET="whsec_..."`.
+
+5. **Restart `pnpm dev`**, sign up at <http://localhost:3000/sign-up>, create
+   an organization, and the Topbar's **OrganizationSwitcher** lights up. The
+   webhook will mirror your Clerk org into the `salons` table; if it lags, the
+   `ClerkAuthProvider` self-heals on first request and logs a warning.
+
+To swap back: set `AUTH_PROVIDER=dev` and restart — no other change needed.
 
 ## Tenant isolation
 

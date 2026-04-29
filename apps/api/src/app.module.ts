@@ -7,12 +7,19 @@ import { TenantModule } from "./tenant/tenant.module";
 import { TenantGuard } from "./tenant/tenant.guard";
 import { HealthController } from "./health/health.controller";
 import { SalonsModule } from "./salons/salons.module";
+import { WebhooksModule } from "./webhooks/webhooks.module";
 
 // AuthGuard runs first; TenantGuard depends on the identity it attaches to
 // the request. Order matters: Nest evaluates global guards in registration
 // order.
 @Module({
-  imports: [PrismaModule, AuthModule, TenantModule, SalonsModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    TenantModule,
+    SalonsModule,
+    WebhooksModule,
+  ],
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: AuthGuard },

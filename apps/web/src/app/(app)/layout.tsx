@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { getServerSession } from "@/lib/session";
+import { serverEnv } from "@/lib/env";
 
 export default async function AppLayout({
   children,
@@ -24,7 +25,9 @@ export default async function AppLayout({
       <Sidebar activeHref={activeHref} />
       <div className="pl-56">
         <Topbar
-          salonName={`Acme Salon (${session.salonSlug})`}
+          mode={serverEnv.authProvider}
+          salonName={session.salonName}
+          salonSlug={session.salonSlug}
           userEmail={session.email}
         />
         <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
