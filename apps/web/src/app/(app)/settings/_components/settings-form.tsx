@@ -20,7 +20,12 @@ const TIMEZONE_OPTIONS = [
 export function SettingsForm({
   defaults,
 }: {
-  defaults: { name: string; timezone: string; slug: string };
+  defaults: {
+    name: string;
+    timezone: string;
+    slug: string;
+    smsFromNumber: string;
+  };
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     updateSettingsAction,
@@ -64,6 +69,21 @@ export function SettingsForm({
             </option>
           ))}
         </Select>
+      </Field>
+      <Field
+        label="SMS sender number"
+        name="smsFromNumber"
+        error={errors.smsFromNumber}
+        hint="E.164 format, e.g. +15555550100. Leave blank to use the platform default."
+      >
+        <Input
+          id="smsFromNumber"
+          name="smsFromNumber"
+          defaultValue={defaults.smsFromNumber}
+          placeholder="+15555550100"
+          inputMode="tel"
+          autoComplete="off"
+        />
       </Field>
       <div className="ss-form-actions">
         <Button type="submit" disabled={pending}>

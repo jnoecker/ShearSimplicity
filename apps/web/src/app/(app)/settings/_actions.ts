@@ -22,9 +22,17 @@ export async function updateSettingsAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const rawSms = optional(formData.get("smsFromNumber"));
   const raw = {
     name: optional(formData.get("name")),
     timezone: optional(formData.get("timezone")),
+    // Distinguish "field absent" from "user cleared the input". The form
+    // always submits the field, so an empty string means "clear it" → null.
+    // A non-submission (no key in formData) means "leave it alone" →
+    // undefined, which the zod schema treats as no-op.
+    smsFromNumber: formData.has("smsFromNumber")
+      ? rawSms ?? null
+      : undefined,
   };
   const parsed = salonSettingsUpdateSchema.safeParse(raw);
   if (!parsed.success) return { errors: toFormErrors(parsed) };

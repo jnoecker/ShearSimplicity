@@ -7,6 +7,7 @@ interface SalonSettings {
   slug: string;
   name: string;
   timezone: string;
+  smsFromNumber: string | null;
 }
 
 export default async function SettingsPage() {
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
             name: settings.name,
             timezone: settings.timezone,
             slug: settings.slug,
+            smsFromNumber: settings.smsFromNumber ?? "",
           }}
         />
       </Card>

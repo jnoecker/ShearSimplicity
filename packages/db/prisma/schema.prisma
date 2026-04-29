@@ -133,6 +133,11 @@ model Salon {
   name        String
   timezone    String   @default("America/New_York")
   clerkOrgId  String?  @unique
+  // E.164 number this salon's SMS goes out from. Unique because Twilio
+  // numbers route inbound messages by `To` — two salons can't share one.
+  // Nullable until an owner provisions a number; sends fall back to the
+  // env-level TWILIO_FROM_NUMBER when unset.
+  smsFromNumber String? @unique
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -229,6 +229,7 @@ export class SmsHandlersService {
     salonId: string;
     salonName: string;
     salonTimezone: string;
+    salonSmsFromNumber: string | null;
     toAddress: string;
   } | null> {
     const payload = (event.payload ?? {}) as { id?: string; salonId?: string };
@@ -266,7 +267,7 @@ export class SmsHandlersService {
 
     const salon = await this.prisma.salon.findUnique({
       where: { id: salonId },
-      select: { name: true, timezone: true },
+      select: { name: true, timezone: true, smsFromNumber: true },
     });
     if (!salon) {
       this.logger.warn(
@@ -280,6 +281,7 @@ export class SmsHandlersService {
       salonId,
       salonName: salon.name,
       salonTimezone: salon.timezone,
+      salonSmsFromNumber: salon.smsFromNumber,
       toAddress,
     };
   }
@@ -296,12 +298,24 @@ export class SmsHandlersService {
     ctx: {
       appointment: LoadedAppointment;
       salonId: string;
+      salonSmsFromNumber: string | null;
       toAddress: string;
     };
     body: string;
     kind: SmsKind;
   }): Promise<void> {
-    const fromAddress = env.TWILIO_FROM_NUMBER ?? "+15555550100";
+    // Per-salon number wins over the platform default. The platform default
+    // is the dev / shared-number fallback while salons are still onboarding.
+    // If neither is set we drop the send entirely — there's no retry that
+    // fixes a missing number, so we mark the row complete rather than
+    // dead-letter it.
+    const fromAddress = ctx.salonSmsFromNumber ?? env.TWILIO_FROM_NUMBER ?? null;
+    if (!fromAddress) {
+      this.logger.warn(
+        `${event.eventType} skipped: no smsFromNumber on salon ${ctx.salonId} and no TWILIO_FROM_NUMBER fallback`,
+      );
+      return;
+    }
 
     let messageRowId: string;
     try {

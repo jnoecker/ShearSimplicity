@@ -188,11 +188,14 @@ Outbound first, inbound second. Reminder jobs separate from confirmations.
 - Handler skips on CANCELLED / NO_SHOW / COMPLETED status (belt + suspenders
   for races) and on a startAt that's already past at fire time.
 
-### Phase 4b-3 — Per-salon Twilio numbers ⬜
+### Phase 4b-3 — Per-salon Twilio numbers 🚧
 
-- New `Salon.smsFromNumber` field + settings UI
-- Inbound webhook routes by `To` header instead of by sender phone
-- Removes the single-shared-number caveat from 4a
+- New nullable, unique `Salon.smsFromNumber` (E.164) + settings UI field
+- Outbound: handler reads `Salon.smsFromNumber` first, falls back to the
+  env-level `TWILIO_FROM_NUMBER`, drops with a logged warning if neither
+- Inbound: webhook routes by `To` header (`Salon.findUnique` on `smsFromNumber`)
+  with a sender-phone fallback that keeps single-tenant dev working
+- Shared zod validates E.164 format on PATCH; null clears the number
 
 ### Backlog (was 4b, deferred to 4c or beyond)
 
