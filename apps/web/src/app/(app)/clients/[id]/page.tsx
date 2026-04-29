@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { Card, PageHeader } from "@/components/form";
+import {
+  statusPill,
+  type AppointmentStatus,
+} from "@/lib/appointment-status";
 import { ClientForm } from "../_components/client-form";
 import { updateClientAction, type FormState } from "../_actions";
 
@@ -8,7 +12,7 @@ interface AppointmentRow {
   id: string;
   startAt: string;
   endAt: string;
-  status: string;
+  status: AppointmentStatus;
   staffMember: { id: string; displayName: string };
   services: Array<{
     serviceNameSnapshot: string;
@@ -45,73 +49,73 @@ export default async function ClientDetailPage({
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader title={client.displayName} description="Client profile" />
+    <>
+      <PageHeader
+        eyebrow="Client"
+        title={client.displayName}
+        description={
+          [client.phone, client.email].filter(Boolean).join(" · ") ||
+          "No contact info on file"
+        }
+        action={
+          <Link href="/clients" className="ss-link">
+            ← Back to clients
+          </Link>
+        }
+      />
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Profile
-        </h2>
-        <Card>
-          <ClientForm
-            action={action}
-            submitLabel="Save changes"
-            defaults={{
-              firstName: client.firstName,
-              lastName: client.lastName,
-              displayName: client.displayName,
-              email: client.email,
-              phone: client.phone,
-              notes: client.notes,
-            }}
-          />
-        </Card>
-      </section>
+      <Card title="Profile" meta="Editable">
+        <ClientForm
+          action={action}
+          submitLabel="Save changes"
+          defaults={{
+            firstName: client.firstName,
+            lastName: client.lastName,
+            displayName: client.displayName,
+            email: client.email,
+            phone: client.phone,
+            notes: client.notes,
+          }}
+        />
+      </Card>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Appointment history
-        </h2>
-        <Card className={client.appointments.length === 0 ? undefined : "p-0"}>
-          {client.appointments.length === 0 ? (
-            <p className="text-sm text-zinc-500">
-              No appointments yet. Booking lands in Phase 3.
-            </p>
-          ) : (
-            <ul className="divide-y divide-zinc-200">
-              {client.appointments.map((a) => (
-                <li key={a.id} className="px-6 py-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-sm font-medium text-zinc-900">
-                        {new Date(a.startAt).toLocaleString()}
-                      </div>
-                      <div className="text-xs text-zinc-500">
-                        With {a.staffMember.displayName} ·{" "}
-                        {a.services
-                          .map((s) => s.serviceNameSnapshot)
-                          .join(", ") || "No services"}
-                      </div>
+      <Card title="Appointment history" meta={`${client.appointments.length} on record`}>
+        {client.appointments.length === 0 ? (
+          <p className="ss-empty">No appointments yet.</p>
+        ) : (
+          <ul className="ss-history">
+            {client.appointments.map((a) => {
+              const pill = statusPill(a.status);
+              return (
+                <li key={a.id} className="ss-history-row">
+                  <div>
+                    <div className="ss-history-svc">
+                      {a.services
+                        .map((s) => s.serviceNameSnapshot)
+                        .join(" · ") || "—"}
                     </div>
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-                      {a.status}
+                    <div className="ss-history-meta">
+                      With <strong>{a.staffMember.displayName}</strong>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="ss-history-date">
+                      {new Date(a.startAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </div>
+                    <span className={`ss-status-pill ${pill.cls}`}>
+                      {pill.label}
                     </span>
                   </div>
                 </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </section>
-
-      <div>
-        <Link
-          href="/clients"
-          className="text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          ← Back to clients
-        </Link>
-      </div>
-    </div>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+    </>
   );
 }

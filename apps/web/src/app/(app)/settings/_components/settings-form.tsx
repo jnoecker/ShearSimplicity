@@ -28,12 +28,10 @@ export function SettingsForm({
   );
   const errors = state?.errors ?? {};
   return (
-    <form action={formAction} className="space-y-5">
-      <FormError message={state?.message} />
+    <form action={formAction} className="ss-form">
+      <FormError message={state?.errors?._ ?? (state?.errors ? state?.message : undefined)} />
       {state?.message && !state.errors && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {state.message}
-        </div>
+        <div className="ss-form-success">{state.message}</div>
       )}
       <Field label="Salon name" name="name" error={errors.name}>
         <Input
@@ -67,7 +65,7 @@ export function SettingsForm({
           ))}
         </Select>
       </Field>
-      <div>
+      <div className="ss-form-actions">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save settings"}
         </Button>

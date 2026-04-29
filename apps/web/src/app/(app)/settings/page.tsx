@@ -12,12 +12,13 @@ interface SalonSettings {
 export default async function SettingsPage() {
   const settings = await apiFetch<SalonSettings>("/settings");
   return (
-    <div className="space-y-6">
+    <>
       <PageHeader
+        eyebrow="Studio"
         title="Settings"
         description="Salon profile and timezone. Business hours, branding, and integrations land later."
       />
-      <Card>
+      <Card title="Studio profile" meta="Public">
         <SettingsForm
           defaults={{
             name: settings.name,
@@ -26,6 +27,6 @@ export default async function SettingsPage() {
           }}
         />
       </Card>
-    </div>
+    </>
   );
 }

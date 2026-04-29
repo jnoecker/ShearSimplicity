@@ -1,5 +1,6 @@
-// Lightweight form primitives. Tailwind classes inline to keep the component
-// surface obvious — when there are 5 of these the styling is the value.
+// Form primitives that render the Tresses design system. Each one is a thin
+// wrapper around `.ss-*` classes — pages don't need to know the class names,
+// they just compose <Field>/<Input>/<Button>/<Card>.
 
 interface FieldProps {
   label: string;
@@ -11,62 +12,32 @@ interface FieldProps {
 
 export function Field({ label, name, hint, error, children }: FieldProps) {
   return (
-    <div className="space-y-1.5">
-      <label
-        htmlFor={name}
-        className="block text-sm font-medium text-zinc-800"
-      >
-        {label}
-      </label>
+    <div className="ss-field">
+      <label htmlFor={name}>{label}</label>
       {children}
-      {hint && !error && (
-        <p className="text-xs text-zinc-500">{hint}</p>
-      )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {hint && !error && <p className="ss-field-hint">{hint}</p>}
+      {error && <p className="ss-field-error">{error}</p>}
     </div>
   );
 }
 
-export function Input(
-  props: React.InputHTMLAttributes<HTMLInputElement>,
-) {
-  return (
-    <input
-      {...props}
-      className={
-        "block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 " +
-        (props.className ?? "")
-      }
-    />
-  );
+export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  // Inputs/selects/textareas inherit shape from .ss-field input/select/textarea
+  // — the className escape hatch is rarely needed. Keep it forwarded for the
+  // few places that want a width override.
+  return <input {...props} />;
 }
 
 export function Textarea(
   props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
 ) {
-  return (
-    <textarea
-      {...props}
-      className={
-        "block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 " +
-        (props.className ?? "")
-      }
-    />
-  );
+  return <textarea {...props} />;
 }
 
 export function Select(
   props: React.SelectHTMLAttributes<HTMLSelectElement>,
 ) {
-  return (
-    <select
-      {...props}
-      className={
-        "block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 " +
-        (props.className ?? "")
-      }
-    />
-  );
+  return <select {...props} />;
 }
 
 export function Checkbox({
@@ -74,13 +45,9 @@ export function Checkbox({
   ...props
 }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <label className="inline-flex items-center gap-2 text-sm text-zinc-800">
-      <input
-        type="checkbox"
-        {...props}
-        className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
-      />
-      {label}
+    <label className="ss-checkbox">
+      <input type="checkbox" {...props} />
+      <span>{label}</span>
     </label>
   );
 }
@@ -92,69 +59,68 @@ export function Button(
 ) {
   const { variant = "primary", className, ...rest } = props;
   const palette =
-    variant === "primary"
-      ? "bg-zinc-900 text-white hover:bg-zinc-800"
-      : "bg-white text-zinc-800 border border-zinc-300 hover:bg-zinc-50";
+    variant === "primary" ? "ss-btn ss-btn-primary" : "ss-btn ss-btn-ghost";
   return (
     <button
       {...rest}
-      className={
-        "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed " +
-        palette +
-        " " +
-        (className ?? "")
-      }
+      className={`${palette}${className ? " " + className : ""}`}
     />
   );
 }
 
 export function FormError({ message }: { message: string | null | undefined }) {
   if (!message) return null;
-  return (
-    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-      {message}
-    </div>
-  );
+  return <div className="ss-form-error">{message}</div>;
 }
 
 export function PageHeader({
   title,
   description,
+  eyebrow,
   action,
 }: {
   title: string;
   description?: string;
+  eyebrow?: string;
   action?: React.ReactNode;
 }) {
   return (
-    <header className="flex items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          {title}
-        </h1>
-        {description && (
-          <p className="mt-1 text-sm text-zinc-500">{description}</p>
-        )}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </header>
+    <div className="ss-page-head-row">
+      <header className="ss-page-head">
+        {eyebrow && <div className="ss-page-eyebrow">{eyebrow}</div>}
+        <h2 className="ss-page-title">{title}</h2>
+        {description && <p className="ss-page-sub">{description}</p>}
+      </header>
+      {action && <div className="ss-page-head-action">{action}</div>}
+    </div>
   );
 }
 
 export function Card({
   children,
   className,
+  title,
+  meta,
+  noPadding,
 }: {
   children: React.ReactNode;
   className?: string;
+  title?: string;
+  meta?: string;
+  // Some lists want a flush card (e.g. tables) — toggle this and the inner
+  // padding goes away.
+  noPadding?: boolean;
 }) {
   return (
     <div
-      className={
-        "rounded-xl border border-zinc-200 bg-white p-6 shadow-sm " +
-        (className ?? "")
-      }
+      className={`ss-card${noPadding ? " is-flush" : ""}${className ? " " + className : ""}`}
     >
+      {(title || meta) && (
+        <div className="ss-card-head">
+          {title && <h3 className="ss-card-title">{title}</h3>}
+          {meta && <span className="ss-card-meta">{meta}</span>}
+        </div>
+      )}
       {children}
     </div>
   );

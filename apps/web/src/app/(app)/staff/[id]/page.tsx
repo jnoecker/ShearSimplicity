@@ -51,48 +51,35 @@ export default async function StaffDetailPage({
   };
 
   return (
-    <div className="space-y-6">
+    <>
       <PageHeader
+        eyebrow="Stylist"
         title={staff.displayName}
         description={staff.title ?? "Stylist"}
+        action={
+          <Link href="/staff" className="ss-link">
+            ← Back to staff
+          </Link>
+        }
       />
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Profile
-        </h2>
-        <Card>
-          <StaffForm
-            action={updateAction}
-            submitLabel="Save changes"
-            defaults={{
-              displayName: staff.displayName,
-              title: staff.title,
-              color: staff.color,
-              bio: staff.bio,
-              isActive: staff.isActive,
-            }}
-          />
-        </Card>
-      </section>
+      <Card title="Profile" meta={staff.isActive ? "Active" : "Inactive"}>
+        <StaffForm
+          action={updateAction}
+          submitLabel="Save changes"
+          defaults={{
+            displayName: staff.displayName,
+            title: staff.title,
+            color: staff.color,
+            bio: staff.bio,
+            isActive: staff.isActive,
+          }}
+        />
+      </Card>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Working hours
-        </h2>
-        <Card>
-          <WorkingHoursForm action={hoursAction} initial={staff.workingHours} />
-        </Card>
-      </section>
-
-      <div>
-        <Link
-          href="/staff"
-          className="text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          ← Back to staff
-        </Link>
-      </div>
-    </div>
+      <Card title="Working hours" meta="Per weekday">
+        <WorkingHoursForm action={hoursAction} initial={staff.workingHours} />
+      </Card>
+    </>
   );
 }

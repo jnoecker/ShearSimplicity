@@ -49,7 +49,7 @@ export function ServiceForm({
       ? (defaults.defaultPriceCents / 100).toFixed(2)
       : "";
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="ss-form">
       <FormError message={state?.message} />
       <Field label="Name" name="name" error={errors.name}>
         <Input
@@ -89,7 +89,7 @@ export function ServiceForm({
           ))}
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="ss-form-row">
         <Field
           label="Default duration"
           name="defaultDurationMinutes"
@@ -138,7 +138,7 @@ export function ServiceForm({
         label="Active (bookable)"
         defaultChecked={defaults?.isActive ?? true}
       />
-      <div>
+      <div className="ss-form-actions">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>

@@ -15,8 +15,8 @@ export function CategoryCreateForm({
   );
   const errors = state?.errors ?? {};
   return (
-    <form action={formAction} className="flex items-end gap-3">
-      <div className="flex-1">
+    <form action={formAction} className="ss-form">
+      <div className="ss-form-row">
         <Field label="Category name" name="name" error={errors.name}>
           <Input
             id="name"
@@ -26,8 +26,6 @@ export function CategoryCreateForm({
             maxLength={80}
           />
         </Field>
-      </div>
-      <div className="w-28">
         <Field label="Order" name="sortOrder" error={errors.sortOrder}>
           <Input
             id="sortOrder"
@@ -38,13 +36,15 @@ export function CategoryCreateForm({
           />
         </Field>
       </div>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Adding…" : "Add"}
-      </Button>
-      {state?.message && !errors._ && (
-        <span className="text-xs text-emerald-700">{state.message}</span>
-      )}
-      <FormError message={errors._} />
+      <div className="ss-form-actions">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Adding…" : "Add category"}
+        </Button>
+        {state?.message && !errors._ && (
+          <span className="ss-form-success-inline">{state.message}</span>
+        )}
+        <FormError message={errors._} />
+      </div>
     </form>
   );
 }
