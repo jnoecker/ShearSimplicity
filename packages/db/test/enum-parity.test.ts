@@ -8,6 +8,7 @@ import * as Prisma from "@prisma/client";
 import {
   Role,
   AppointmentStatus,
+  AppointmentSource,
   PaymentStatus,
   MessageDirection,
   MessageStatus,
@@ -29,6 +30,11 @@ const cases: ParityCase[] = [
     name: "AppointmentStatus",
     shared: AppointmentStatus,
     prisma: Prisma.AppointmentStatus,
+  },
+  {
+    name: "AppointmentSource",
+    shared: AppointmentSource,
+    prisma: Prisma.AppointmentSource,
   },
   { name: "PaymentStatus", shared: PaymentStatus, prisma: Prisma.PaymentStatus },
   {

@@ -19,6 +19,16 @@ export const AppointmentStatus = {
 export type AppointmentStatus =
   (typeof AppointmentStatus)[keyof typeof AppointmentStatus];
 
+export const AppointmentSource = {
+  STAFF: "STAFF",
+  ONLINE: "ONLINE",
+  PHONE: "PHONE",
+  AI_AGENT: "AI_AGENT",
+  IMPORT: "IMPORT",
+} as const;
+export type AppointmentSource =
+  (typeof AppointmentSource)[keyof typeof AppointmentSource];
+
 export const PaymentStatus = {
   PENDING: "PENDING",
   SUCCEEDED: "SUCCEEDED",
@@ -78,6 +88,7 @@ export const EventType = {
   APPOINTMENT_CREATED: "appointment.created",
   APPOINTMENT_RESCHEDULED: "appointment.rescheduled",
   APPOINTMENT_CANCELLED: "appointment.cancelled",
+  APPOINTMENT_CONFIRMED: "appointment.confirmed",
   APPOINTMENT_CHECKED_IN: "appointment.checked_in",
   APPOINTMENT_STARTED: "appointment.started",
   APPOINTMENT_COMPLETED: "appointment.completed",

@@ -10,6 +10,8 @@ import { SalonsModule } from "./salons/salons.module";
 import { StaffModule } from "./staff/staff.module";
 import { ServicesModule } from "./services/services.module";
 import { ClientsModule } from "./clients/clients.module";
+import { AppointmentsModule } from "./appointments/appointments.module";
+import { OutboxModule } from "./outbox/outbox.module";
 import { SettingsModule } from "./settings/settings.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 
@@ -25,6 +27,8 @@ import { WebhooksModule } from "./webhooks/webhooks.module";
     StaffModule,
     ServicesModule,
     ClientsModule,
+    AppointmentsModule,
+    OutboxModule,
     SettingsModule,
     WebhooksModule,
   ],

@@ -14,6 +14,14 @@ const schema = z
     DEV_SALON_ID: z.string().uuid(),
     DEV_SALON_SLUG: z.string().min(1),
 
+    // Disables the in-process outbox poller. Tests and one-off scripts set
+    // this so the worker doesn't tick during their lifetime; production
+    // leaves it unset.
+    OUTBOX_WORKER_DISABLED: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((v) => v === "true"),
+
     CLERK_SECRET_KEY: z.string().optional(),
     // Clerk issues a single publishable key per app. The web side reads it
     // from `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (the prefix is required for
