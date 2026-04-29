@@ -8,17 +8,16 @@ import { OutboxStatus, type OutboxEvent } from "@prisma/client";
 import { EventType } from "@shearsimp/shared";
 import { env } from "../env";
 import { PrismaService } from "../prisma/prisma.service";
+import { SmsHandlersService } from "../messaging/sms-handlers.service";
 
 const POLL_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 25;
 const MAX_ATTEMPTS = 5;
 
-// Outbox stub for Phase 3a. Phase 4 replaces this with a BullMQ-backed
-// processor that actually sends SMS confirmations on `appointment.created`.
-//
-// The worker exists today so the contract is visible end-to-end: writers
-// append OutboxEvent rows in the same transaction as the business write, the
-// worker eventually picks them up, the handler decides what to do.
+// Polls the outbox table for due events and dispatches each to a handler.
+// Phase 4a wires real SMS-sending behaviour for `appointment.created`. The
+// worker still uses simple poll-and-update — Phase 4b will switch to BullMQ
+// for proper leasing / per-event scheduling once reminder jobs land.
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxWorker.name);
@@ -26,7 +25,10 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private stopped = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly smsHandlers: SmsHandlersService,
+  ) {}
 
   onModuleInit() {
     if (env.OUTBOX_WORKER_DISABLED) {
@@ -88,7 +90,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   // Fetches a small batch of due events and processes them sequentially. We
   // don't claim rows with a status flip + SELECT FOR UPDATE here because there
-  // is only one worker process at this stage; Phase 4 introduces BullMQ which
+  // is only one worker process at this stage; Phase 4b introduces BullMQ which
   // handles dispatch and concurrency properly.
   async processBatch() {
     const due = await this.prisma.outboxEvent.findMany({
@@ -106,9 +108,9 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   private async processOne(event: OutboxEvent) {
     try {
-      await dispatch(event);
+      await this.dispatch(event);
       // Single terminal write per attempt: a crash mid-dispatch leaves the
-      // row in PENDING and the next tick retries it. Phase 4 introduces
+      // row in PENDING and the next tick retries it. Phase 4b introduces
       // proper leasing (claim with FOR UPDATE SKIP LOCKED + worker heartbeat
       // via BullMQ); the stub deliberately avoids non-leased PROCESSING.
       await this.prisma.outboxEvent.update({
@@ -130,9 +132,10 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
         where: { id: event.id },
         data: {
           status: dead ? OutboxStatus.DEAD_LETTER : OutboxStatus.PENDING,
+          attempts: { increment: 1 },
           lastError: message.slice(0, 1000),
-          // Linear backoff is fine for a stub; replace with exponential when
-          // real handlers go in.
+          // Linear backoff is fine for the polling-based worker; switch to
+          // exponential when BullMQ takes over scheduling in 4b.
           nextAttemptAt: new Date(
             Date.now() + (event.attempts + 1) * 30_000,
           ),
@@ -140,17 +143,21 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
   }
-}
 
-// Handler dispatch table. Phase 4 will replace the appointment.created branch
-// with a real SMS send. Until then, every event no-ops successfully so the
-// worker exercises the read/update/finalize path end-to-end.
-async function dispatch(event: OutboxEvent): Promise<void> {
-  switch (event.eventType) {
-    case EventType.APPOINTMENT_CREATED:
-      // Intentional no-op for Phase 3a.
-      return;
-    default:
-      return;
+  // Handler dispatch table. Add new event types here as their handlers land
+  // — keeps the worker's flow control isolated from per-event business logic.
+  private async dispatch(event: OutboxEvent): Promise<void> {
+    switch (event.eventType) {
+      case EventType.APPOINTMENT_CREATED:
+        await this.smsHandlers.handleAppointmentCreated(event);
+        return;
+      default:
+        // Unknown event types are silently completed so a bad row can't wedge
+        // the worker. Log so we notice the typo / missing handler.
+        this.logger.warn(
+          `Outbox event ${event.id} has unhandled type "${event.eventType}" — marking complete`,
+        );
+        return;
+    }
   }
 }

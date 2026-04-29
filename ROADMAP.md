@@ -143,17 +143,37 @@ on `/schedule` (`?book=1` query state, so back/forward and shareable URLs work).
 
 **Risks:** time zones. Store everything UTC; render in salon's `timezone`. DST edge cases at the salon-hour boundary.
 
-## Phase 4 — Messaging (SMS) ⬜
+## Phase 4 — Messaging (SMS) 🚧
 
 Outbound first, inbound second. Reminder jobs separate from confirmations.
 
-- Twilio adapter behind a `MessagingProvider` interface (mirror the auth pattern)
-- Outbox worker: on `appointment.created` send confirmation SMS; idempotent on `Message.providerMessageId`
-- Reminder jobs (BullMQ): scheduled at appointment creation, cancelled on reschedule/cancel
+### Phase 4a — Messaging backend 🚧
+
+- `MessagingProvider` interface, switchable on `MESSAGING_PROVIDER` env
+  (`dev` logs and returns a fake sid; `twilio` uses the official SDK)
+- Outbox worker now actually dispatches: `appointment.created` → confirmation SMS
+- Idempotent on `Message.outboxEventId` (new schema column) so retries don't double-send
+- Inbound webhook `POST /webhooks/twilio/sms` with HMAC signature validation,
+  deduped on `processed_webhook_events.(source, externalEventId)`, routes
+  inbound messages to the salon by sender phone (single-shared-number caveat — see 4b)
+- Message body templated per appointment in the salon's timezone, includes STOP instruction
+- Vitest coverage for the formatter + handler flow control (send / dedup / cancelled / no phone / send failure)
+
+**Out of scope (intentional):** reminder scheduling, reschedule/cancel SMS, message-history UI, per-salon Twilio numbers, deep-link tokens. Those land in 4b.
+
+### Phase 4b — Reminders + per-salon numbers + history UI ⬜
+
+- BullMQ-backed reminder jobs scheduled at appointment creation, cancelled on reschedule/cancel
+- Per-salon Twilio numbers stored on `Salon` so inbound routes by `To` instead of by sender phone
+- Reschedule / cancel notifications (new outbox event types and handlers)
 - Cancellation / reschedule deep links signed with short-lived tokens
-- Inbound webhook (Twilio → API) logs to `messages` and appends `message.sms_received`
-- Message history per client
-- **A2P 10DLC compliance work** documented separately: brand registration, campaign approval. Without it, US carriers will filter or block.
+- Message history per client (UI)
+- Switch outbox worker from poll-and-update to BullMQ leasing with proper heartbeat
+
+### A2P 10DLC compliance — separate workstream
+
+- Brand registration, campaign approval. Without it, US carriers will filter or block.
+- Terms / privacy policy live at `docs/sms-terms.md` and `docs/privacy-policy.md`.
 
 **Risks:** Twilio webhook signature validation, replay protection. Long messages segmenting cost-of-delivery surprises.
 
