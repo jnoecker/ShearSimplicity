@@ -5,19 +5,20 @@ import { createClientAction } from "../_actions";
 
 export default function NewClientPage() {
   return (
-    <div className="space-y-6">
-      <PageHeader title="New client" description="Add a client profile." />
+    <>
+      <PageHeader
+        eyebrow="Roster"
+        title="New client"
+        description="Add a client profile."
+        action={
+          <Link href="/clients" className="ss-link">
+            ← Back to clients
+          </Link>
+        }
+      />
       <Card>
         <ClientForm action={createClientAction} submitLabel="Create client" />
       </Card>
-      <div>
-        <Link
-          href="/clients"
-          className="text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          ← Back to clients
-        </Link>
-      </div>
-    </div>
+    </>
   );
 }

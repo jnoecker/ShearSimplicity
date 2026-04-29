@@ -38,9 +38,18 @@ export default async function ServiceDetailPage({
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader title={service.name} description={service.slug} />
-      <Card>
+    <>
+      <PageHeader
+        eyebrow="Service"
+        title={service.name}
+        description={service.slug}
+        action={
+          <Link href="/services" className="ss-link">
+            ← Back to services
+          </Link>
+        }
+      />
+      <Card title="Edit" meta={service.isActive ? "Active" : "Inactive"}>
         <ServiceForm
           action={action}
           categories={categories}
@@ -57,14 +66,6 @@ export default async function ServiceDetailPage({
           }}
         />
       </Card>
-      <div>
-        <Link
-          href="/services"
-          className="text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          ← Back to services
-        </Link>
-      </div>
-    </div>
+    </>
   );
 }

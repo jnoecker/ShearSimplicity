@@ -34,7 +34,7 @@ export function StaffForm({
   );
   const errors = state?.errors ?? {};
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="ss-form">
       <FormError message={state?.message} />
       <Field label="Display name" name="displayName" error={errors.displayName}>
         <Input
@@ -82,7 +82,7 @@ export function StaffForm({
         label="Active (shows on the schedule)"
         defaultChecked={defaults?.isActive ?? true}
       />
-      <div>
+      <div className="ss-form-actions">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>

@@ -34,9 +34,9 @@ export function ClientForm({
   );
   const errors = state?.errors ?? {};
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="ss-form">
       <FormError message={state?.message} />
-      <div className="grid grid-cols-2 gap-4">
+      <div className="ss-form-row">
         <Field label="First name" name="firstName" error={errors.firstName}>
           <Input
             id="firstName"
@@ -68,7 +68,7 @@ export function ClientForm({
           maxLength={160}
         />
       </Field>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="ss-form-row">
         <Field label="Phone" name="phone" error={errors.phone}>
           <Input
             id="phone"
@@ -97,7 +97,7 @@ export function ClientForm({
           maxLength={4000}
         />
       </Field>
-      <div>
+      <div className="ss-form-actions">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>

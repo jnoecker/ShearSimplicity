@@ -789,3 +789,220 @@
   text-underline-offset: 2px;
 }
 .ss-link:hover { color: var(--ss-magenta); }
+
+/* ====================================================
+   Phase 3c — restyled CRUD pages: forms, list helpers,
+   page headers, empty states, links.
+==================================================== */
+
+.ss-page-head-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+}
+.ss-page-head-row .ss-page-head { margin: 0; flex: 1; min-width: 240px; }
+.ss-page-head-action { padding-top: 6px; }
+
+.ss-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 18px;
+  flex-wrap: wrap;
+}
+.ss-toolbar-search { max-width: 360px; flex: 1; min-width: 220px; }
+
+.ss-empty {
+  margin: 0;
+  padding: 24px;
+  color: var(--ss-text-secondary);
+  font-size: 13.5px;
+  text-align: center;
+}
+.ss-empty-card { padding: 36px 24px; text-align: center; }
+.ss-empty-inner { max-width: 440px; margin: 0 auto; }
+.ss-empty-tag { display: flex; justify-content: center; margin-bottom: 12px; }
+.ss-empty-title {
+  font-family: var(--font-cormorant), serif;
+  font-size: 22px; font-weight: 600;
+  color: var(--ss-text-heading);
+  margin: 0 0 6px;
+}
+.ss-empty-body {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ss-text-secondary);
+  line-height: 1.55;
+}
+
+.ss-phase-tag {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ss-magenta-deep);
+  background: var(--ss-magenta-pale);
+  border-radius: 999px;
+}
+
+/* Form layout. Replaces the Tailwind `space-y-5` / `grid-cols-2` patterns
+   the Phase 2 pages used so all the CRUD forms inherit the same look. */
+.ss-form { display: flex; flex-direction: column; gap: 0; }
+.ss-form > .ss-field { margin-bottom: 14px; }
+.ss-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.ss-form-row > .ss-field { margin-bottom: 14px; }
+@media (max-width: 720px) {
+  .ss-form-row { grid-template-columns: 1fr; gap: 0; }
+}
+.ss-form-actions {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.ss-form-error {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(212, 74, 110, 0.08);
+  border: 1px solid rgba(212, 74, 110, 0.32);
+  color: #842842;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.ss-form-success {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(93, 176, 117, 0.10);
+  border: 1px solid rgba(93, 176, 117, 0.30);
+  color: #2e6b3d;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.ss-form-success-inline {
+  font-size: 12.5px;
+  color: #2e6b3d;
+}
+.ss-field-hint {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--ss-text-muted);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+.ss-field-error {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: #b8254a;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.ss-checkbox {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13.5px;
+  color: var(--ss-text-primary);
+  font-family: var(--font-quicksand), sans-serif;
+  cursor: pointer;
+  margin-bottom: 14px;
+}
+.ss-checkbox input[type="checkbox"] {
+  width: 16px; height: 16px;
+  accent-color: var(--ss-magenta);
+}
+
+/* Working-hours editor. */
+.ss-hours-grid { display: flex; flex-direction: column; gap: 8px; }
+.ss-hours-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 12px;
+  background: var(--ss-panel-strong);
+  border: 1px solid var(--ss-line);
+  border-radius: 12px;
+}
+.ss-hours-label {
+  width: 44px;
+  padding-top: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ss-text-secondary);
+}
+.ss-hours-windows { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.ss-hours-closed { font-size: 12.5px; color: var(--ss-text-muted); padding-top: 6px; }
+.ss-hours-window { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ss-hours-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--ss-line);
+  background: var(--ss-panel);
+  color: var(--ss-text-primary);
+  font-family: var(--font-quicksand), sans-serif;
+}
+.ss-hours-input:focus {
+  outline: none;
+  border-color: var(--ss-magenta);
+  box-shadow: 0 0 0 3px rgba(30, 195, 217, 0.16);
+}
+.ss-hours-sep { font-size: 12.5px; color: var(--ss-text-muted); }
+.ss-btn-tiny { padding: 6px 10px; font-size: 12px; }
+
+/* Card variant: flush table inside. */
+.ss-card.is-flush { padding: 0; }
+.ss-card.is-flush .ss-card-head {
+  padding: 18px 22px 0;
+}
+.ss-card.is-flush > .ss-table { margin-top: 0; }
+.ss-card.is-flush > .ss-stack-list,
+.ss-card.is-flush > .ss-history { padding: 0; }
+
+/* Plain bullet-less list for category management. */
+.ss-stack-list {
+  list-style: none; margin: 0; padding: 0;
+}
+.ss-stack-list li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 22px;
+  border-top: 1px solid var(--ss-line);
+  font-size: 13.5px;
+}
+.ss-stack-list li:first-child { border-top: 0; }
+.ss-list-name { color: var(--ss-text-heading); font-weight: 500; }
+.ss-list-meta { color: var(--ss-text-muted); font-size: 12px; }
+
+/* Appointment history list (client profile). */
+.ss-history { list-style: none; margin: 0; padding: 0; }
+.ss-history-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--ss-line);
+}
+.ss-history-row:first-child { border-top: 0; }
+
+/* Inactive badge on service cards. */
+.ss-svc-inactive {
+  font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--ss-text-muted);
+  margin-top: 4px;
+}
+
+/* Plain link variant for inline names in lists — no underline by default. */
+.ss-link-plain {
+  color: var(--ss-text-heading);
+  text-decoration: none;
+}
+.ss-link-plain:hover { color: var(--ss-magenta-deep); }
+
+/* Quick-actions tweak: original CSS expected an icon — we only have a label,
+   so center it. */
+.ss-action {
+  text-decoration: none;
+}
+.ss-action .ss-action-title { width: 100%; text-align: center; }
