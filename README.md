@@ -80,9 +80,11 @@ First-time Clerk users — every step is clickable.
      ```
 
 4. **Wire the webhook (so orgs/users mirror into your DB)**
-   - In dev, expose your local API to Clerk via either:
-     - **Clerk CLI** — `npx @clerk/cli webhooks tunnel --port 3001` (recommended), or
-     - **ngrok** — `ngrok http 3001` and use the forwarded HTTPS URL.
+   - Clerk needs a public HTTPS URL to reach your local API. Pick one:
+     - **ngrok** — `ngrok http 3001` (free tier is fine; sign up once at
+       <https://ngrok.com> for a stable subdomain).
+     - **cloudflared** — `cloudflared tunnel --url http://localhost:3001`.
+     - **localtunnel** — `npx localtunnel --port 3001`.
    - Dashboard → **Webhooks** → **Add endpoint**.
    - Endpoint URL: `<tunnel-url>/webhooks/clerk`.
    - Subscribe to:
