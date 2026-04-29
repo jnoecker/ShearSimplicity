@@ -4,6 +4,11 @@ import { addDays } from "date-fns";
 // All appointment timestamps live as absolute UTC instants. The salon decides
 // what day-boundary to draw — these helpers convert between "calendar date in
 // the salon's wall clock" and the UTC instants we send to the API.
+//
+// DST note: a salon-local day can be 23, 24, or 25 UTC hours long. Every
+// helper here works in salon wall-clock units rather than elapsed UTC minutes
+// so the calendar grid (and the drop handler) stays correct on transition
+// days.
 
 export interface DayWindow {
   /** Inclusive UTC instant of midnight in the salon's timezone. */
@@ -24,12 +29,11 @@ export function dayWindow(isoDate: string, timezone: string): DayWindow {
   if (!ISO_DATE.test(isoDate)) {
     throw new Error(`Expected YYYY-MM-DD, got "${isoDate}"`);
   }
-  // fromZonedTime("2026-04-29T00:00:00", "America/New_York") yields the UTC
-  // instant when New York's wall clock reads midnight on the 29th — i.e. the
-  // start of that calendar day.
+  // toUtc is *next* salon-local midnight, not fromUtc + 24h. On a
+  // spring-forward day toUtc is 23h after fromUtc; on fall-back it's 25h.
   const fromUtc = fromZonedTime(`${isoDate}T00:00:00`, timezone);
-  const toUtc = fromZonedTime(`${isoDate}T00:00:00`, timezone);
-  toUtc.setTime(addDays(toUtc, 1).getTime());
+  const nextIsoDate = shiftIsoDate(isoDate, 1, timezone);
+  const toUtc = fromZonedTime(`${nextIsoDate}T00:00:00`, timezone);
   return { fromUtc, toUtc, isoDate };
 }
 
@@ -39,6 +43,8 @@ export function shiftIsoDate(
   delta: number,
   timezone: string,
 ): string {
+  // Anchor at midday so the +/- 24 UTC hours from addDays can't slip across
+  // a DST gap and produce yesterday/tomorrow's date.
   const base = fromZonedTime(`${isoDate}T12:00:00`, timezone);
   const shifted = addDays(base, delta);
   return formatTz(shifted, "yyyy-MM-dd", { timeZone: timezone });
@@ -55,14 +61,22 @@ export function formatDayLabel(isoDate: string, timezone: string): string {
   return formatTz(d, "EEEE, MMMM d", { timeZone: timezone });
 }
 
-/** Minutes from the start of the salon-local day for a given UTC instant. */
+/**
+ * Salon wall-clock minutes from midnight for a given UTC instant. We read the
+ * instant's H:mm in the salon timezone and convert to minutes — that way a 9
+ * AM appointment lands at slot 540 regardless of whether the day was 23, 24,
+ * or 25 UTC hours long. `isoDate` is preserved in the signature so the
+ * caller's grid context is explicit, even though the math no longer needs it.
+ */
 export function minutesFromDayStart(
   instant: Date,
   isoDate: string,
   timezone: string,
 ): number {
-  const dayStart = dayWindow(isoDate, timezone).fromUtc;
-  return Math.round((instant.getTime() - dayStart.getTime()) / 60_000);
+  void isoDate;
+  const hm = formatTz(instant, "HH:mm", { timeZone: timezone });
+  const [hh, mm] = hm.split(":").map(Number);
+  return hh * 60 + mm;
 }
 
 /** Inverse of minutesFromDayStart — used by the drop handler. */
@@ -71,8 +85,12 @@ export function instantAtMinutes(
   isoDate: string,
   timezone: string,
 ): Date {
-  const dayStart = dayWindow(isoDate, timezone).fromUtc;
-  return new Date(dayStart.getTime() + minutes * 60_000);
+  // Build the salon-local wall-clock string and convert. fromZonedTime picks
+  // the correct UTC offset for the date, so HH:mm round-trips through DST
+  // gaps without drifting an hour.
+  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+  const mm = String(minutes % 60).padStart(2, "0");
+  return fromZonedTime(`${isoDate}T${hh}:${mm}:00`, timezone);
 }
 
 /** Local-clock label for a UTC instant rendered in the salon's timezone. */
