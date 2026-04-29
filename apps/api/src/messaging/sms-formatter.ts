@@ -72,8 +72,12 @@ interface ReminderForSms {
 
 export function formatReminderSms(input: ReminderForSms): string {
   const when = formatDateTimeLabel(input.startAt, input.salonTimezone);
+  // Use a colon, not an em dash. Em dash is outside GSM-7 and forces the
+  // whole message into UCS-2, dropping per-segment capacity from 160 → 70
+  // chars. That was the only non-GSM-7 punctuation in any of our
+  // production-bound templates; the other helpers stay ASCII.
   return (
-    `${input.salonName}: Reminder — your appointment with ` +
+    `${input.salonName}: Reminder: your appointment with ` +
     `${input.staffFirstName} is ${when}. Reply STOP to opt out.`
   );
 }
