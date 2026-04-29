@@ -642,8 +642,15 @@ function BookDayView({
                 ),
               )}
 
-              {/* Open slots — only render the start of a fits-the-duration
-                  window so we don't paint a slot you can't actually book. */}
+              {/* Open slots — one button per quarter-hour slot, sized to a
+                  single slot so click targets don't overlap. We still gate
+                  by "fits the duration" so we never offer a slot the
+                  appointment can't actually fit into.
+                  The earlier rendering made each button `requiredSlots`
+                  rows tall, which stacked them up to 6 deep on a 90-min
+                  service — clicks were dispatched to whichever button
+                  happened to be last in DOM order at that y-coord, so
+                  picking "1:00" often booked 1:15 / 1:30 / etc. */}
               {Array.from({ length: TOTAL_SLOTS }).map((_, slot) => {
                 if (occ[slot]) return null;
                 let fits = true;
@@ -655,17 +662,14 @@ function BookDayView({
                 }
                 if (!fits) return null;
                 const minutes = SLOT_START_MIN + slot * SLOT_MIN;
-                const isSelectedHere =
-                  selectedMinutes === minutes &&
-                  (!selectedStaffId || selectedStaffId === s.id);
                 return (
                   <button
                     key={`o${slot}`}
                     type="button"
-                    className={`bk-day-open${isSelectedHere ? " is-picked" : ""}`}
+                    className="bk-day-open"
                     style={{
                       top: slot * SLOT_HEIGHT,
-                      height: requiredSlots * SLOT_HEIGHT,
+                      height: SLOT_HEIGHT,
                     }}
                     aria-label={`Book ${minutesLabel(minutes)} with ${s.displayName}`}
                     onClick={() => {
@@ -677,6 +681,35 @@ function BookDayView({
                   />
                 );
               })}
+
+              {/* Picked-slot preview — non-interactive overlay that shows
+                  the appointment's full duration in this column. We paint
+                  it on top of the open-slot buttons (pointer-events: none
+                  so it doesn't intercept further clicks) once a slot is
+                  picked for this stylist. */}
+              {selectedMinutes !== null &&
+                (!selectedStaffId || selectedStaffId === s.id) &&
+                selectedMinutes >= SLOT_START_MIN &&
+                selectedMinutes < SLOT_END_MIN && (() => {
+                  const startSlot =
+                    (selectedMinutes - SLOT_START_MIN) / SLOT_MIN;
+                  if (occ[startSlot]) return null;
+                  return (
+                    <div
+                      key="picked"
+                      className="bk-day-pick"
+                      style={{
+                        top: startSlot * SLOT_HEIGHT,
+                        height: requiredSlots * SLOT_HEIGHT,
+                      }}
+                      aria-hidden
+                    >
+                      <span className="bk-day-pick-label">
+                        {minutesLabel(selectedMinutes)}
+                      </span>
+                    </div>
+                  );
+                })()}
 
               {/* Existing appointments — read-only, color-coded. */}
               {appointments
