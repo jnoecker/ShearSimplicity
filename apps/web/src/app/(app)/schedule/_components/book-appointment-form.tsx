@@ -10,6 +10,10 @@ import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/form";
 import { instantAtMinutes } from "@/lib/salon-time";
 import { createAppointmentAction } from "../_actions";
+import {
+  BookCalendar,
+  type BookCalendarAppointment,
+} from "./book-calendar";
 
 export interface BookStaff {
   id: string;
@@ -44,11 +48,15 @@ interface Props {
   staff: BookStaff[];
   services: BookService[];
   clients: BookClient[];
+  /** "YYYY-MM" of the calendar's currently-loaded month. */
+  viewMonth: string;
+  prevMonthIso: string;
+  nextMonthIso: string;
+  todayIso: string;
+  /** Appointments overlapping `viewMonth`, fed to the calendar. */
+  monthAppointments: BookCalendarAppointment[];
 }
 
-const SLOT_MIN = 15;
-const SLOT_START_MIN = 9 * 60;
-const SLOT_END_MIN = 19 * 60;
 const STAFF_GRADIENTS = [
   "linear-gradient(135deg, #1ec3d9, #0892a8)",
   "linear-gradient(135deg, #0892a8, #4a82b3)",
@@ -65,6 +73,11 @@ export function BookAppointmentForm({
   staff,
   services,
   clients,
+  viewMonth,
+  prevMonthIso,
+  nextMonthIso,
+  todayIso,
+  monthAppointments,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -74,7 +87,9 @@ export function BookAppointmentForm({
   const [staffId, setStaffId] = useState<string>(initialStaffId ?? "");
   const [serviceIds, setServiceIds] = useState<Set<string>>(new Set());
   const [date, setDate] = useState<string>(initialDate);
-  const [minutes, setMinutes] = useState<number>(SLOT_START_MIN);
+  // Null until the user picks an open slot — keeps the slot grid free of a
+  // pre-selected highlight on first arrival.
+  const [minutes, setMinutes] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -111,16 +126,12 @@ export function BookAppointmentForm({
   const currency =
     services.find((s) => serviceIds.has(s.id))?.currency ?? "USD";
 
-  const slotOptions = useMemo(() => {
-    const out: Array<{ minutes: number; label: string }> = [];
-    for (let m = SLOT_START_MIN; m <= SLOT_END_MIN - SLOT_MIN; m += SLOT_MIN) {
-      out.push({ minutes: m, label: minutesToLabel(m) });
-    }
-    return out;
-  }, []);
-
   const canSubmit =
-    !!clientId && !!staffId && serviceIds.size > 0 && !isPending;
+    !!clientId &&
+    !!staffId &&
+    serviceIds.size > 0 &&
+    minutes !== null &&
+    !isPending;
 
   function toggleService(id: string) {
     setServiceIds((prev) => {
@@ -133,7 +144,7 @@ export function BookAppointmentForm({
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || minutes === null) return;
     setErrorMsg(null);
     const startAtIso = instantAtMinutes(minutes, date, timezone).toISOString();
     startTransition(async () => {
@@ -249,33 +260,44 @@ export function BookAppointmentForm({
           </div>
         </Card>
 
-        <Card title="Date & time">
-          <div className="ss-form-row">
-            <div className="ss-field">
-              <label htmlFor="book-date">Date</label>
-              <input
-                id="book-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value || initialDate)}
-              />
-            </div>
-            <div className="ss-field">
-              <label htmlFor="book-time">Start time</label>
-              <select
-                id="book-time"
-                value={minutes}
-                onChange={(e) => setMinutes(Number(e.target.value))}
-              >
-                {slotOptions.map((o) => (
-                  <option key={o.minutes} value={o.minutes}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {totalDuration > 0 && (
+        <Card
+          title="When"
+          meta={
+            minutes !== null
+              ? `${formatDateLabel(date)} · ${minutesToLabel(minutes)}`
+              : "Pick a day, then a slot"
+          }
+        >
+          <BookCalendar
+            timezone={timezone}
+            selectedDate={date}
+            todayIso={todayIso}
+            selectedMinutes={minutes}
+            viewMonth={viewMonth}
+            prevMonthIso={prevMonthIso}
+            nextMonthIso={nextMonthIso}
+            monthAppointments={monthAppointments}
+            staff={staff}
+            selectedStaffId={staffId || null}
+            services={services}
+            selectedDurationMin={totalDuration}
+            onSelectDate={(iso) => {
+              setDate(iso);
+              setMinutes(null);
+            }}
+            onPickSlot={(iso, m, sId) => {
+              setDate(iso);
+              setMinutes(m);
+              if (!staffId) setStaffId(sId);
+            }}
+            onSelectStaff={(sId) => setStaffId(sId)}
+            onMonthChange={(yearMonth) => {
+              // Re-fetch via the URL so the server can hand us a new
+              // monthAppointments slice.
+              router.push(`/schedule/new?month=${yearMonth}&date=${date}`);
+            }}
+          />
+          {totalDuration > 0 && minutes !== null && (
             <p className="ss-book-end-hint">
               Ends at {minutesToLabel(minutes + totalDuration)} ·{" "}
               {totalDuration} min total
@@ -324,7 +346,9 @@ export function BookAppointmentForm({
                   .join(", ")}
           </SummaryRow>
           <SummaryRow label="When">
-            {formatDateLabel(date)} · {minutesToLabel(minutes)}
+            {minutes !== null
+              ? `${formatDateLabel(date)} · ${minutesToLabel(minutes)}`
+              : formatDateLabel(date)}
           </SummaryRow>
           <SummaryRow label="Duration">
             {totalDuration > 0 ? `${totalDuration} min` : "—"}
