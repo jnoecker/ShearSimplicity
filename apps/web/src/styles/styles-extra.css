@@ -19,9 +19,18 @@
   z-index: 0;
 }
 .ss-signin-card {
+  /* Reset the older two-pane definition in styles.css that left
+     .ss-signin-card as display:flex / align-items:center — that turned the
+     card's children into row-flex items here. Force normal block flow so
+     the brand mark, headings, form, and footer stack vertically. */
+  display: block;
+  flex: none;
+  align-items: stretch;
+  justify-content: flex-start;
   position: relative;
   z-index: 2;
   width: 420px;
+  max-width: calc(100% - 32px);
   padding: 44px 40px 36px;
   background: var(--ss-panel-strong);
   border: 1px solid var(--ss-panel-border);

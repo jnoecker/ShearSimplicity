@@ -241,9 +241,12 @@ function truncate(s: string, max: number): string {
 }
 
 function formatPrice(cents: number, currency: string): string {
+  // Format with the currency's natural minor units. Hardcoding
+  // maximumFractionDigits:0 truncates real cents (e.g., $54.99 → $55) and the
+  // services list elsewhere already shows full precision — this stays
+  // consistent with that.
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
-    maximumFractionDigits: 0,
   }).format(cents / 100);
 }
