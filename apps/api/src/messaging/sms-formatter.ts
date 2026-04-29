@@ -62,6 +62,26 @@ export function formatCancelSms(input: CancelForSms): string {
   );
 }
 
+interface ReminderForSms {
+  startAt: Date;
+  staffFirstName: string;
+  clientFirstName: string;
+  salonName: string;
+  salonTimezone: string;
+}
+
+export function formatReminderSms(input: ReminderForSms): string {
+  const when = formatDateTimeLabel(input.startAt, input.salonTimezone);
+  // Use a colon, not an em dash. Em dash is outside GSM-7 and forces the
+  // whole message into UCS-2, dropping per-segment capacity from 160 → 70
+  // chars. That was the only non-GSM-7 punctuation in any of our
+  // production-bound templates; the other helpers stay ASCII.
+  return (
+    `${input.salonName}: Reminder: your appointment with ` +
+    `${input.staffFirstName} is ${when}. Reply STOP to opt out.`
+  );
+}
+
 function formatDateTimeLabel(instant: Date, timeZone: string): string {
   // "Thu Apr 30 at 1:00 PM" — combined so reschedule/cancel bodies stay
   // inside one segment with both before/after.

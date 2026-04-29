@@ -3,6 +3,7 @@ import {
   firstName,
   formatCancelSms,
   formatConfirmationSms,
+  formatReminderSms,
   formatRescheduleSms,
 } from "../src/messaging/sms-formatter";
 
@@ -96,6 +97,23 @@ describe("sms-formatter", () => {
       });
       expect(body).toContain("Bella's Salon");
       expect(body).toContain("cancelled");
+      expect(body).toContain("Trina");
+      expect(body).toMatch(/Thu, Apr 30 at 1:00\s?PM/);
+      expect(body).toContain("STOP");
+    });
+  });
+
+  describe("formatReminderSms", () => {
+    it("renders a reminder body with the appointment time", () => {
+      const body = formatReminderSms({
+        startAt: new Date("2026-04-30T17:00:00Z"),
+        staffFirstName: "Trina",
+        clientFirstName: "Mira",
+        salonName: "Bella's Salon",
+        salonTimezone: "America/New_York",
+      });
+      expect(body).toContain("Bella's Salon");
+      expect(body).toContain("Reminder");
       expect(body).toContain("Trina");
       expect(body).toMatch(/Thu, Apr 30 at 1:00\s?PM/);
       expect(body).toContain("STOP");

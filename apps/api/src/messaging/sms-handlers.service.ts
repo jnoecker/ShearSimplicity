@@ -17,6 +17,7 @@ import {
   firstName,
   formatCancelSms,
   formatConfirmationSms,
+  formatReminderSms,
   formatRescheduleSms,
 } from "./sms-formatter";
 
@@ -46,7 +47,8 @@ type LoadedAppointment = NonNullable<
 type SmsKind =
   | "appointment_confirmation"
   | "appointment_reschedule"
-  | "appointment_cancellation";
+  | "appointment_cancellation"
+  | "appointment_reminder";
 
 /**
  * Outbox event handlers for the messaging side. Wired into the worker's
@@ -173,6 +175,50 @@ export class SmsHandlersService {
       ctx,
       body,
       kind: "appointment_cancellation",
+    });
+  }
+
+  async handleAppointmentReminderDue(event: OutboxRow): Promise<void> {
+    const ctx = await this.loadAppointmentContext(event);
+    if (!ctx) return;
+
+    // Cancellation suppression already happens at scheduling time
+    // (cancel() marks the reminder row COMPLETED in the same transaction).
+    // The status checks here are belt + suspenders for races and for any
+    // path that bypasses the suppression — e.g., a status transition to
+    // COMPLETED / NO_SHOW between scheduling and firing.
+    if (
+      ctx.appointment.status === AppointmentStatus.CANCELLED ||
+      ctx.appointment.status === AppointmentStatus.NO_SHOW ||
+      ctx.appointment.status === AppointmentStatus.COMPLETED
+    ) {
+      this.logger.log(
+        `appointment.reminder_due skipped: appointment ${ctx.appointment.id} is ${ctx.appointment.status}`,
+      );
+      return;
+    }
+    // A reminder for a time that's already past is just noise. Drop without
+    // sending; the worker still marks the row COMPLETED so it stops polling.
+    if (ctx.appointment.startAt.getTime() <= Date.now()) {
+      this.logger.log(
+        `appointment.reminder_due skipped: appointment ${ctx.appointment.id} startAt is in the past`,
+      );
+      return;
+    }
+
+    const body = formatReminderSms({
+      startAt: ctx.appointment.startAt,
+      staffFirstName: firstName(ctx.appointment.staffMember.displayName),
+      clientFirstName: firstName(ctx.appointment.client?.displayName ?? "there"),
+      salonName: ctx.salonName,
+      salonTimezone: ctx.salonTimezone,
+    });
+
+    await this.sendOutboundSms({
+      event,
+      ctx,
+      body,
+      kind: "appointment_reminder",
     });
   }
 

@@ -341,6 +341,83 @@ describe("SmsHandlersService.handleAppointmentRescheduled", () => {
   });
 });
 
+describe("SmsHandlersService.handleAppointmentReminderDue", () => {
+  const event = {
+    id: "00000000-0000-0000-0000-000000000f04",
+    eventType: "appointment.reminder_due",
+    payload: { id: APPOINTMENT_ID, salonId: SALON_ID } as Prisma.JsonValue,
+  };
+
+  // The handler reads Date.now() to decide whether the appointment is past.
+  // The fake appointments use 2026-04-30 17:00 UTC, so anchor "now" earlier
+  // than that for the happy path.
+  const FUTURE_NOW = new Date("2026-04-30T16:00:00Z"); // 1 hour before
+  const PAST_NOW = new Date("2026-05-01T00:00:00Z"); // after appointment
+
+  it("sends a reminder SMS for an upcoming appointment", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FUTURE_NOW);
+    try {
+      const { handler, sendSms, messageCreate, domainEventCreate } =
+        buildHandler({ appointment: fakeAppointment() });
+
+      await handler.handleAppointmentReminderDue(event);
+
+      expect(messageCreate).toHaveBeenCalledTimes(1);
+      expect(messageCreate.mock.calls[0]![0].data.body).toMatch(/Reminder/);
+      expect(sendSms).toHaveBeenCalledTimes(1);
+      expect(domainEventCreate.mock.calls[0]![0].data.payload.kind).toBe(
+        "appointment_reminder",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips when the appointment is already in the past", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(PAST_NOW);
+    try {
+      const { handler, sendSms, messageCreate } = buildHandler({
+        appointment: fakeAppointment(),
+      });
+      await handler.handleAppointmentReminderDue(event);
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(sendSms).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips when status has moved to COMPLETED before the reminder fired", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FUTURE_NOW);
+    try {
+      const { handler, sendSms } = buildHandler({
+        appointment: fakeAppointment({ status: AppointmentStatus.COMPLETED }),
+      });
+      await handler.handleAppointmentReminderDue(event);
+      expect(sendSms).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips when status is CANCELLED (belt + suspenders for the suppression)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FUTURE_NOW);
+    try {
+      const { handler, sendSms } = buildHandler({
+        appointment: fakeAppointment({ status: AppointmentStatus.CANCELLED }),
+      });
+      await handler.handleAppointmentReminderDue(event);
+      expect(sendSms).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("SmsHandlersService.handleAppointmentCancelled", () => {
   const event = {
     id: "00000000-0000-0000-0000-000000000f03",

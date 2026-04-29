@@ -32,6 +32,13 @@ import {
 // is a generous upper bound for the calendar UI; longer ranges should paginate.
 const RANGE_QUERY_MAX_DAYS = 62;
 
+// How far in advance the reminder SMS fires. The actual schedule lives in
+// `OutboxEvent.nextAttemptAt`, which the existing worker already polls — no
+// separate scheduler needed. If startAt is less than this far away (or
+// already past) the row's nextAttemptAt is in the past and the worker fires
+// it on its next tick.
+const REMINDER_LEAD_MS = 24 * 60 * 60 * 1000;
+
 const APPOINTMENT_INCLUDE = {
   client: { select: { id: true, displayName: true, phone: true, email: true } },
   staffMember: { select: { id: true, displayName: true, color: true } },
@@ -196,15 +203,28 @@ export class AppointmentsService {
         payload: eventPayload,
         actorUserId,
       });
-      // Outbox row for downstream side-effects (Phase 4 wires the SMS
-      // confirmation handler). The worker is a noop today; the row exists
-      // because the contract is "events ride along the same transaction".
+      // Outbox row driving the confirmation SMS (Phase 4a).
       await tx.outboxEvent.create({
         data: {
           salonId,
           eventType: EventType.APPOINTMENT_CREATED,
           payload: eventPayload as Prisma.InputJsonValue,
           status: OutboxStatus.PENDING,
+        },
+      });
+      // Outbox row driving the 24h reminder SMS (Phase 4b-2). nextAttemptAt
+      // is in the past for same-day bookings — that's fine, the worker
+      // fires it on the next tick.
+      await tx.outboxEvent.create({
+        data: {
+          salonId,
+          eventType: EventType.APPOINTMENT_REMINDER_DUE,
+          payload: {
+            id: appointment.id,
+            salonId,
+          } as Prisma.InputJsonValue,
+          status: OutboxStatus.PENDING,
+          nextAttemptAt: new Date(startAt.getTime() - REMINDER_LEAD_MS),
         },
       });
       return appointment;
@@ -305,6 +325,23 @@ export class AppointmentsService {
           status: OutboxStatus.PENDING,
         },
       });
+      // Move the still-pending reminder forward (or back) to match the new
+      // startAt. updateMany skips rows that have already fired (status !=
+      // PENDING), which is the correct behaviour — once a reminder went
+      // out for the old time, we can't unsend it.
+      await tx.outboxEvent.updateMany({
+        where: {
+          eventType: EventType.APPOINTMENT_REMINDER_DUE,
+          status: OutboxStatus.PENDING,
+          salonId,
+          payload: { path: ["id"], equals: id },
+        },
+        data: {
+          nextAttemptAt: new Date(
+            updated.startAt.getTime() - REMINDER_LEAD_MS,
+          ),
+        },
+      });
       return updated;
     });
   }
@@ -353,6 +390,21 @@ export class AppointmentsService {
           eventType: EventType.APPOINTMENT_CANCELLED,
           payload: { id, salonId } as Prisma.InputJsonValue,
           status: OutboxStatus.PENDING,
+        },
+      });
+      // Suppress any still-pending reminder. We complete the row rather
+      // than delete it so the audit trail (and the worker's metrics)
+      // still see what was scheduled.
+      await tx.outboxEvent.updateMany({
+        where: {
+          eventType: EventType.APPOINTMENT_REMINDER_DUE,
+          status: OutboxStatus.PENDING,
+          salonId,
+          payload: { path: ["id"], equals: id },
+        },
+        data: {
+          status: OutboxStatus.COMPLETED,
+          processedAt: new Date(),
         },
       });
       return updated;
