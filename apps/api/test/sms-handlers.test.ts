@@ -264,3 +264,124 @@ describe("SmsHandlersService.handleAppointmentCreated", () => {
     expect(domainEventCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("SmsHandlersService.handleAppointmentRescheduled", () => {
+  const event = {
+    id: "00000000-0000-0000-0000-000000000f02",
+    eventType: "appointment.rescheduled",
+    payload: {
+      id: APPOINTMENT_ID,
+      salonId: SALON_ID,
+      previousStartAt: "2026-04-30T17:00:00Z",
+    } as Prisma.JsonValue,
+  };
+
+  it("sends a reschedule SMS containing both old and new times", async () => {
+    const { handler, sendSms, messageCreate, messageUpdate, domainEventCreate } =
+      buildHandler({
+        appointment: {
+          ...fakeAppointment(),
+          // Stand-in for the new time (May 2 4:00 PM EDT).
+          startAt: new Date("2026-05-02T20:00:00Z"),
+        },
+      });
+
+    await handler.handleAppointmentRescheduled(event);
+
+    expect(messageCreate).toHaveBeenCalledTimes(1);
+    expect(messageCreate.mock.calls[0]![0].data.body).toMatch(/Apr 30/);
+    expect(messageCreate.mock.calls[0]![0].data.body).toMatch(/May 2/);
+    expect(messageCreate.mock.calls[0]![0].data.outboxEventId).toBe(event.id);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(messageUpdate).toHaveBeenCalledTimes(1);
+    expect(domainEventCreate).toHaveBeenCalledTimes(1);
+    expect(domainEventCreate.mock.calls[0]![0].data.payload.kind).toBe(
+      "appointment_reschedule",
+    );
+  });
+
+  it("skips when previousStartAt is missing from the payload", async () => {
+    const { handler, sendSms, messageCreate } = buildHandler({
+      appointment: fakeAppointment(),
+    });
+    await handler.handleAppointmentRescheduled({
+      ...event,
+      payload: { id: APPOINTMENT_ID, salonId: SALON_ID } as Prisma.JsonValue,
+    });
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it("skips when the appointment was cancelled before the reschedule SMS fired", async () => {
+    const { handler, sendSms, messageCreate } = buildHandler({
+      appointment: fakeAppointment({ status: AppointmentStatus.CANCELLED }),
+    });
+    await handler.handleAppointmentRescheduled(event);
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it("dedupes on retry via the outboxEventId path", async () => {
+    const dupErr = new Prisma.PrismaClientKnownRequestError(
+      "duplicate",
+      {
+        code: "P2002",
+        clientVersion: "x",
+        meta: { target: ["outboxEventId"] },
+      },
+    );
+    const { handler, sendSms, messageFindUnique } = buildHandler({
+      appointment: fakeAppointment(),
+      insertThrows: dupErr,
+      existingMessage: { id: "existing-id", providerMessageId: "SM_already_sent" },
+    });
+    await handler.handleAppointmentRescheduled(event);
+    expect(messageFindUnique).toHaveBeenCalledTimes(1);
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+});
+
+describe("SmsHandlersService.handleAppointmentCancelled", () => {
+  const event = {
+    id: "00000000-0000-0000-0000-000000000f03",
+    eventType: "appointment.cancelled",
+    payload: { id: APPOINTMENT_ID, salonId: SALON_ID } as Prisma.JsonValue,
+  };
+
+  it("sends a cancel SMS even when the appointment status is CANCELLED", async () => {
+    // Cancellation flips status to CANCELLED in the same transaction that
+    // emits the outbox event — by the time we run, status is already CANCELLED.
+    // Don't filter on it (the create handler does) because that's the whole
+    // point of this notice.
+    const { handler, sendSms, messageCreate, domainEventCreate } = buildHandler({
+      appointment: fakeAppointment({ status: AppointmentStatus.CANCELLED }),
+    });
+
+    await handler.handleAppointmentCancelled(event);
+
+    expect(messageCreate).toHaveBeenCalledTimes(1);
+    expect(messageCreate.mock.calls[0]![0].data.body).toMatch(/cancelled/i);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(domainEventCreate.mock.calls[0]![0].data.payload.kind).toBe(
+      "appointment_cancellation",
+    );
+  });
+
+  it("skips when the client has no phone on file", async () => {
+    const { handler, sendSms, messageCreate } = buildHandler({
+      appointment: fakeAppointment({ phone: null }),
+    });
+    await handler.handleAppointmentCancelled(event);
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it("skips when the appointment is missing", async () => {
+    const { handler, sendSms, messageCreate } = buildHandler({
+      appointment: null,
+    });
+    await handler.handleAppointmentCancelled(event);
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+});

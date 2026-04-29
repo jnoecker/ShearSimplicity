@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   firstName,
+  formatCancelSms,
   formatConfirmationSms,
+  formatRescheduleSms,
 } from "../src/messaging/sms-formatter";
 
 describe("sms-formatter", () => {
@@ -60,6 +62,43 @@ describe("sms-formatter", () => {
         serviceNames: ["Color refresh", "Blowout"],
       });
       expect(body).toContain("Color refresh, Blowout");
+    });
+  });
+
+  describe("formatRescheduleSms", () => {
+    it("renders both old and new times in the salon timezone", () => {
+      const body = formatRescheduleSms({
+        previousStartAt: new Date("2026-04-30T17:00:00Z"),
+        newStartAt: new Date("2026-05-02T20:00:00Z"),
+        staffFirstName: "Trina",
+        clientFirstName: "Mira",
+        salonName: "Bella's Salon",
+        salonTimezone: "America/New_York",
+      });
+      expect(body).toContain("Bella's Salon");
+      expect(body).toContain("Mira");
+      expect(body).toContain("Trina");
+      expect(body).toContain("STOP");
+      // Old: Apr 30 1:00 PM EDT, New: May 2 4:00 PM EDT
+      expect(body).toMatch(/Thu, Apr 30 at 1:00\s?PM/);
+      expect(body).toMatch(/Sat, May 2 at 4:00\s?PM/);
+    });
+  });
+
+  describe("formatCancelSms", () => {
+    it("renders the cancelled appointment time in the salon timezone", () => {
+      const body = formatCancelSms({
+        startAt: new Date("2026-04-30T17:00:00Z"),
+        staffFirstName: "Trina",
+        clientFirstName: "Mira",
+        salonName: "Bella's Salon",
+        salonTimezone: "America/New_York",
+      });
+      expect(body).toContain("Bella's Salon");
+      expect(body).toContain("cancelled");
+      expect(body).toContain("Trina");
+      expect(body).toMatch(/Thu, Apr 30 at 1:00\s?PM/);
+      expect(body).toContain("STOP");
     });
   });
 });

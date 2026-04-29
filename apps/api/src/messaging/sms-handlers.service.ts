@@ -13,7 +13,12 @@ import {
   MESSAGING_PROVIDER,
   type MessagingProvider,
 } from "./messaging-provider.interface";
-import { firstName, formatConfirmationSms } from "./sms-formatter";
+import {
+  firstName,
+  formatCancelSms,
+  formatConfirmationSms,
+  formatRescheduleSms,
+} from "./sms-formatter";
 
 interface OutboxRow {
   id: string;
@@ -32,6 +37,16 @@ const APPOINTMENT_INCLUDE = {
     },
   },
 } satisfies Prisma.AppointmentInclude;
+
+type LoadedAppointment = NonNullable<
+  Awaited<ReturnType<PrismaService["appointment"]["findFirst"]>>
+> &
+  Prisma.AppointmentGetPayload<{ include: typeof APPOINTMENT_INCLUDE }>;
+
+type SmsKind =
+  | "appointment_confirmation"
+  | "appointment_reschedule"
+  | "appointment_cancellation";
 
 /**
  * Outbox event handlers for the messaging side. Wired into the worker's
@@ -54,51 +69,153 @@ export class SmsHandlersService {
   ) {}
 
   async handleAppointmentCreated(event: OutboxRow): Promise<void> {
-    // Pull the appointmentId out of the snapshot payload the writer stored
-    // alongside the event (see appointments.service.ts → create()).
+    const ctx = await this.loadAppointmentContext(event);
+    if (!ctx) return;
+
+    // A reschedule between create and send means the customer should hear
+    // about the *current* time — so reformat from current state every attempt.
+    if (
+      ctx.appointment.status === AppointmentStatus.CANCELLED ||
+      ctx.appointment.status === AppointmentStatus.NO_SHOW
+    ) {
+      this.logger.log(
+        `appointment.created skipped: appointment ${ctx.appointment.id} is ${ctx.appointment.status}`,
+      );
+      return;
+    }
+
+    const totalDuration = ctx.appointment.services.reduce(
+      (acc, s) => acc + s.durationSnapshotMinutes,
+      0,
+    );
+    const body = formatConfirmationSms({
+      startAt: ctx.appointment.startAt,
+      staffFirstName: firstName(ctx.appointment.staffMember.displayName),
+      clientFirstName: firstName(ctx.appointment.client?.displayName ?? "there"),
+      serviceNames: ctx.appointment.services.map((s) => s.serviceNameSnapshot),
+      durationMinutes: totalDuration,
+      salonName: ctx.salonName,
+      salonTimezone: ctx.salonTimezone,
+    });
+
+    await this.sendOutboundSms({
+      event,
+      ctx,
+      body,
+      kind: "appointment_confirmation",
+    });
+  }
+
+  async handleAppointmentRescheduled(event: OutboxRow): Promise<void> {
+    const payload = (event.payload ?? {}) as { previousStartAt?: string };
+    if (!payload.previousStartAt) {
+      this.logger.warn(
+        `appointment.rescheduled event ${event.id} missing previousStartAt — skipping`,
+      );
+      return;
+    }
+    const previousStartAt = new Date(payload.previousStartAt);
+    if (Number.isNaN(previousStartAt.getTime())) {
+      this.logger.warn(
+        `appointment.rescheduled event ${event.id} has invalid previousStartAt — skipping`,
+      );
+      return;
+    }
+
+    const ctx = await this.loadAppointmentContext(event);
+    if (!ctx) return;
+
+    // Cancellations after a reschedule supersede the reschedule notice. Don't
+    // tell the client about a move that no longer matters.
+    if (
+      ctx.appointment.status === AppointmentStatus.CANCELLED ||
+      ctx.appointment.status === AppointmentStatus.NO_SHOW
+    ) {
+      this.logger.log(
+        `appointment.rescheduled skipped: appointment ${ctx.appointment.id} is ${ctx.appointment.status}`,
+      );
+      return;
+    }
+
+    const body = formatRescheduleSms({
+      previousStartAt,
+      newStartAt: ctx.appointment.startAt,
+      staffFirstName: firstName(ctx.appointment.staffMember.displayName),
+      clientFirstName: firstName(ctx.appointment.client?.displayName ?? "there"),
+      salonName: ctx.salonName,
+      salonTimezone: ctx.salonTimezone,
+    });
+
+    await this.sendOutboundSms({
+      event,
+      ctx,
+      body,
+      kind: "appointment_reschedule",
+    });
+  }
+
+  async handleAppointmentCancelled(event: OutboxRow): Promise<void> {
+    const ctx = await this.loadAppointmentContext(event);
+    if (!ctx) return;
+
+    // Don't filter on status here — a cancellation SMS for a CANCELLED
+    // appointment is the whole point.
+    const body = formatCancelSms({
+      startAt: ctx.appointment.startAt,
+      staffFirstName: firstName(ctx.appointment.staffMember.displayName),
+      clientFirstName: firstName(ctx.appointment.client?.displayName ?? "there"),
+      salonName: ctx.salonName,
+      salonTimezone: ctx.salonTimezone,
+    });
+
+    await this.sendOutboundSms({
+      event,
+      ctx,
+      body,
+      kind: "appointment_cancellation",
+    });
+  }
+
+  // ---------- shared helpers ----------
+
+  private async loadAppointmentContext(event: OutboxRow): Promise<{
+    appointment: LoadedAppointment;
+    salonId: string;
+    salonName: string;
+    salonTimezone: string;
+    toAddress: string;
+  } | null> {
     const payload = (event.payload ?? {}) as { id?: string; salonId?: string };
     const appointmentId = payload.id;
     const salonId = payload.salonId;
     if (!appointmentId || !salonId) {
       this.logger.warn(
-        `appointment.created event ${event.id} missing id/salonId in payload — skipping`,
+        `${event.eventType} event ${event.id} missing id/salonId in payload — skipping`,
       );
-      return;
+      return null;
     }
 
-    const appointment = await this.prisma.appointment.findFirst({
+    const appointment = (await this.prisma.appointment.findFirst({
       where: { id: appointmentId, salonId },
       include: APPOINTMENT_INCLUDE,
-    });
+    })) as LoadedAppointment | null;
     if (!appointment) {
-      // The appointment was hard-deleted before we got here. Nothing to do —
-      // but this shouldn't happen because we don't delete appointments. Log
-      // so it's visible if it ever does.
+      // The appointment was hard-deleted before we got here. We don't delete
+      // appointments today — log loudly if this ever fires.
       this.logger.warn(
-        `appointment.created event ${event.id} target appointment ${appointmentId} not found`,
+        `${event.eventType} event ${event.id} target appointment ${appointmentId} not found`,
       );
-      return;
-    }
-    // Re-formatting on every attempt means a reschedule between create and
-    // send produces a confirmation for the *new* time, not the original one.
-    if (
-      appointment.status === AppointmentStatus.CANCELLED ||
-      appointment.status === AppointmentStatus.NO_SHOW
-    ) {
-      this.logger.log(
-        `appointment.created skipped: appointment ${appointmentId} is ${appointment.status}`,
-      );
-      return;
+      return null;
     }
 
     const toAddress = appointment.client?.phone ?? null;
     if (!toAddress) {
-      // No phone on file → nothing we can send. Don't fail the outbox row;
-      // there's no retry that fixes a missing phone.
+      // No phone on file → no retry fixes that. Drop without throwing so the
+      // outbox row completes.
       this.logger.log(
-        `appointment.created skipped: client ${appointment.clientId} has no phone`,
+        `${event.eventType} skipped: client ${appointment.clientId} has no phone`,
       );
-      return;
+      return null;
     }
 
     const salon = await this.prisma.salon.findUnique({
@@ -106,44 +223,50 @@ export class SmsHandlersService {
       select: { name: true, timezone: true },
     });
     if (!salon) {
-      // Salon disappeared (which shouldn't happen — salons are not deleted).
-      // Bail without retrying.
       this.logger.warn(
-        `appointment.created skipped: salon ${salonId} not found`,
+        `${event.eventType} skipped: salon ${salonId} not found`,
       );
-      return;
+      return null;
     }
 
-    const totalDuration = appointment.services.reduce(
-      (acc, s) => acc + s.durationSnapshotMinutes,
-      0,
-    );
-    const body = formatConfirmationSms({
-      startAt: appointment.startAt,
-      staffFirstName: firstName(appointment.staffMember.displayName),
-      clientFirstName: firstName(appointment.client?.displayName ?? "there"),
-      serviceNames: appointment.services.map((s) => s.serviceNameSnapshot),
-      durationMinutes: totalDuration,
+    return {
+      appointment,
+      salonId,
       salonName: salon.name,
       salonTimezone: salon.timezone,
-    });
+      toAddress,
+    };
+  }
 
+  // INSERT-then-send-with-dedup, then transactional finalize. The bulk of
+  // each handler reduces to "render a body and call this".
+  private async sendOutboundSms({
+    event,
+    ctx,
+    body,
+    kind,
+  }: {
+    event: OutboxRow;
+    ctx: {
+      appointment: LoadedAppointment;
+      salonId: string;
+      toAddress: string;
+    };
+    body: string;
+    kind: SmsKind;
+  }): Promise<void> {
     const fromAddress = env.TWILIO_FROM_NUMBER ?? "+15555550100";
 
-    // Idempotency front door: try to insert the Message row keyed by
-    // outboxEventId. If a previous attempt crashed mid-send and left the
-    // row in QUEUED with no providerMessageId, we'll re-call the provider
-    // and update the same row instead of writing a new one.
     let messageRowId: string;
     try {
       const created = await this.prisma.message.create({
         data: {
-          salonId,
-          clientId: appointment.clientId,
+          salonId: ctx.salonId,
+          clientId: ctx.appointment.clientId,
           channel: "SMS",
           direction: MessageDirection.OUTBOUND,
           status: MessageStatus.QUEUED,
-          toAddress,
+          toAddress: ctx.toAddress,
           fromAddress,
           body,
           outboxEventId: event.id,
@@ -157,11 +280,8 @@ export class SmsHandlersService {
         });
         if (!existing) throw err;
         if (existing.providerMessageId) {
-          // Already sent on a previous attempt that crashed before marking
-          // the outbox row completed. The worker's idempotent finalize will
-          // fix that — nothing else to do here.
           this.logger.log(
-            `appointment.created already sent on prior attempt (sid=${existing.providerMessageId})`,
+            `${event.eventType} already sent on prior attempt (sid=${existing.providerMessageId})`,
           );
           return;
         }
@@ -174,7 +294,7 @@ export class SmsHandlersService {
     let result;
     try {
       result = await this.messaging.sendSms({
-        to: toAddress,
+        to: ctx.toAddress,
         from: fromAddress,
         body,
       });
@@ -188,16 +308,13 @@ export class SmsHandlersService {
           errorMessage: message.slice(0, 500),
         },
       });
-      // Re-throw so the worker bumps `attempts` and retries — a transient
-      // Twilio outage shouldn't terminally drop the SMS. The next attempt
-      // will pick up the same Message row via outboxEventId.
       throw sendErr;
     }
 
     // Pass the provider's status through verbatim — Twilio's create-time
-    // response is often still QUEUED/accepted, and the carrier-side terminal
-    // state (DELIVERED / FAILED) only arrives later via a status callback.
-    // Forcing SENT here would lie about delivery progress.
+    // response is often still QUEUED, and DELIVERED/FAILED only arrives
+    // later via the status callback. Forcing SENT here would misrepresent
+    // delivery progress.
     const messageStatus: MessageStatus =
       result.status === "FAILED"
         ? MessageStatus.FAILED
@@ -218,15 +335,15 @@ export class SmsHandlersService {
       });
       await tx.domainEvent.create({
         data: {
-          salonId,
+          salonId: ctx.salonId,
           aggregateType: "MESSAGE",
           aggregateId: messageRowId,
           eventType: EventType.MESSAGE_SMS_SENT,
           payload: {
-            appointmentId,
+            appointmentId: ctx.appointment.id,
             providerMessageId: result.providerMessageId,
-            to: toAddress,
-            kind: "appointment_confirmation",
+            to: ctx.toAddress,
+            kind,
           } satisfies Prisma.InputJsonValue,
           actorType: ActorType.SYSTEM,
         },
