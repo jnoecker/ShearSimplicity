@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Role } from "./enums.js";
+import { AppointmentSource, AppointmentStatus, Role } from "./enums.js";
 
 // Field-level building blocks — reused across create/update shapes so the
 // same trim/length/format rules apply everywhere.
@@ -209,6 +209,109 @@ export const clientUpdateSchema = z.object({
 
 export type ClientCreateInput = z.infer<typeof clientCreateSchema>;
 export type ClientUpdateInput = z.infer<typeof clientUpdateSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Appointments (Phase 3a)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// All times accepted from the client are ISO-8601 strings with offset (or Z).
+// We coerce to Date here so downstream code is dealing in absolute instants —
+// the salon timezone only matters for rendering, not storage.
+const isoDateTime = z
+  .string()
+  .datetime({ offset: true })
+  .transform((s) => new Date(s));
+
+const optionalNotes = optionalTrimmed(4000);
+
+export const appointmentSourceSchema = z.nativeEnum(AppointmentSource);
+export const appointmentStatusSchema = z.nativeEnum(AppointmentStatus);
+
+// At least one service is required: an appointment with zero services has no
+// duration and the booking flow can't compute endAt.
+export const appointmentCreateSchema = z.object({
+  clientId: uuidSchema,
+  staffMemberId: uuidSchema,
+  serviceIds: z.array(uuidSchema).min(1).max(20),
+  startAt: isoDateTime,
+  notes: optionalNotes,
+  internalNotes: optionalNotes,
+  source: appointmentSourceSchema.default(AppointmentSource.STAFF),
+});
+
+export const appointmentRescheduleSchema = z.object({
+  startAt: isoDateTime,
+  // Allow moving to a different stylist as part of a reschedule. When omitted,
+  // the existing stylist is kept.
+  staffMemberId: uuidSchema.optional(),
+});
+
+export const appointmentCancelSchema = z.object({
+  reason: optionalTrimmed(500),
+});
+
+export const appointmentNotesUpdateSchema = z
+  .object({
+    notes: optionalNotes.optional(),
+    internalNotes: optionalNotes.optional(),
+  })
+  .refine(
+    (n) => n.notes !== undefined || n.internalNotes !== undefined,
+    "Provide notes or internalNotes",
+  );
+
+// Status transitions outside reschedule/cancel/complete go through this
+// endpoint. The state-machine guard lives in the service.
+export const appointmentTransitionSchema = z.object({
+  status: z.enum([
+    AppointmentStatus.CONFIRMED,
+    AppointmentStatus.CHECKED_IN,
+    AppointmentStatus.IN_PROGRESS,
+    AppointmentStatus.NO_SHOW,
+  ]),
+});
+
+export const appointmentCompleteSchema = z.object({
+  // When omitted, server uses now. Validation guarantees end > start when both
+  // are provided.
+  actualStartAt: isoDateTime.optional(),
+  actualEndAt: isoDateTime.optional(),
+});
+
+export const appointmentListQuerySchema = z.object({
+  // Day/week range queries use [from, to). Both required so we don't
+  // accidentally scan the whole table.
+  from: isoDateTime,
+  to: isoDateTime,
+  staffMemberId: uuidSchema.optional(),
+  // CSV is awkward for arrays; comma-split for convenience.
+  status: z
+    .string()
+    .optional()
+    .transform((s) =>
+      s
+        ? (s.split(",").map((v) => v.trim()).filter(Boolean) as AppointmentStatus[])
+        : undefined,
+    ),
+});
+
+export type AppointmentCreateInput = z.infer<typeof appointmentCreateSchema>;
+export type AppointmentRescheduleInput = z.infer<
+  typeof appointmentRescheduleSchema
+>;
+export type AppointmentCancelInput = z.infer<typeof appointmentCancelSchema>;
+export type AppointmentNotesUpdateInput = z.infer<
+  typeof appointmentNotesUpdateSchema
+>;
+export type AppointmentTransitionInput = z.infer<
+  typeof appointmentTransitionSchema
+>;
+export type AppointmentCompleteInput = z.infer<
+  typeof appointmentCompleteSchema
+>;
+export type AppointmentListQueryInput = z.infer<
+  typeof appointmentListQuerySchema
+>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Salon settings (Phase 2 surface — name, timezone. Business hours and

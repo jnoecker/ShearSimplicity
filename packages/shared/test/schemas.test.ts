@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  appointmentCreateSchema,
+  appointmentListQuerySchema,
+  appointmentTransitionSchema,
   clientCreateSchema,
   clientUpdateSchema,
   salonSettingsUpdateSchema,
@@ -180,5 +183,72 @@ describe("salonSettingsUpdateSchema", () => {
 
   it("rejects an empty payload", () => {
     expect(() => salonSettingsUpdateSchema.parse({})).toThrow();
+  });
+});
+
+describe("appointmentCreateSchema", () => {
+  const validInput = {
+    clientId: "11111111-1111-1111-1111-111111111111",
+    staffMemberId: "22222222-2222-2222-2222-222222222222",
+    serviceIds: ["33333333-3333-3333-3333-333333333333"],
+    startAt: "2026-05-01T14:00:00Z",
+  };
+
+  it("coerces startAt to a Date and applies default source", () => {
+    const parsed = appointmentCreateSchema.parse(validInput);
+    expect(parsed.startAt).toBeInstanceOf(Date);
+    expect(parsed.startAt.toISOString()).toBe("2026-05-01T14:00:00.000Z");
+    expect(parsed.source).toBe("STAFF");
+  });
+
+  it("requires at least one service", () => {
+    expect(() =>
+      appointmentCreateSchema.parse({ ...validInput, serviceIds: [] }),
+    ).toThrow();
+  });
+
+  it("rejects a startAt without offset/Z", () => {
+    expect(() =>
+      appointmentCreateSchema.parse({
+        ...validInput,
+        startAt: "2026-05-01T14:00:00",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("appointmentTransitionSchema", () => {
+  it("accepts the four manually-driven targets", () => {
+    for (const status of ["CONFIRMED", "CHECKED_IN", "IN_PROGRESS", "NO_SHOW"]) {
+      expect(appointmentTransitionSchema.parse({ status }).status).toBe(status);
+    }
+  });
+
+  it("rejects targets that have dedicated endpoints", () => {
+    // CANCELLED, COMPLETED, and SCHEDULED each go through their own routes
+    // (cancel, complete, create) — letting them through here would bypass the
+    // input that those endpoints require.
+    for (const status of ["CANCELLED", "COMPLETED", "SCHEDULED"]) {
+      expect(() => appointmentTransitionSchema.parse({ status })).toThrow();
+    }
+  });
+});
+
+describe("appointmentListQuerySchema", () => {
+  it("splits comma-separated status into an array", () => {
+    const parsed = appointmentListQuerySchema.parse({
+      from: "2026-05-01T00:00:00Z",
+      to: "2026-05-02T00:00:00Z",
+      status: "SCHEDULED,CONFIRMED",
+    });
+    expect(parsed.status).toEqual(["SCHEDULED", "CONFIRMED"]);
+  });
+
+  it("returns undefined status when omitted", () => {
+    const parsed = appointmentListQuerySchema.parse({
+      from: "2026-05-01T00:00:00Z",
+      to: "2026-05-02T00:00:00Z",
+    });
+    expect(parsed.status).toBeUndefined();
   });
 });

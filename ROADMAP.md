@@ -53,7 +53,7 @@ PR: [#1](https://github.com/jnoecker/ShearSimplicity/pull/1)
 - Enum parity test between `@shearsimp/shared` and Prisma
 - `dotenv-cli` so Prisma scripts pick up the root `.env`
 
-## Phase 1.5 — Clerk Organizations 🚧
+## Phase 1.5 — Clerk Organizations ✅
 
 Replace `DevAuthProvider` with a real auth flow without changing controllers.
 
@@ -72,7 +72,7 @@ Replace `DevAuthProvider` with a real auth flow without changing controllers.
 
 **Risks:** Clerk's Next SDK is intrusive; treat its boundary carefully so swap-back to dev mode stays cheap. Don't leak Clerk types into shared packages.
 
-## Phase 2 — Core salon data 🚧
+## Phase 2 — Core salon data ✅
 
 CRUD UIs and APIs for the entities the rest of the product depends on.
 
@@ -86,18 +86,24 @@ CRUD UIs and APIs for the entities the rest of the product depends on.
 
 **Definition of done:** can create a salon, add 3 stylists with hours, add 5 services in 2 categories, add 10 clients, all without touching the database directly.
 
-## Phase 3 — Scheduling ⬜
+## Phase 3 — Scheduling 🚧
 
-Where the product earns its keep.
+Where the product earns its keep. Split into sub-phases so each PR stays
+focused.
+
+### Phase 3a — Scheduling backend 🚧
 
 - Create / reschedule / cancel appointments with conflict detection (no overlap on same stylist)
 - Status state machine: `SCHEDULED → CONFIRMED → CHECKED_IN → IN_PROGRESS → COMPLETED` (plus `CANCELLED`, `NO_SHOW`)
 - On status change, append `appointment.*` domain events
-- Calendar view: day, week, stylist column views; drag-to-reschedule
-- Stylist availability respects `WorkingHours` and existing appointments
 - Appointment notes (client-visible) and internal notes (staff only)
 - Capture `actualStartAt` / `actualEndAt` / `actualDurationMinutes` on completion (Phase 6 will use these as ground truth)
 - Outbox worker stub: process `appointment.created` events (no side effects yet — wired in Phase 4)
+
+### Phase 3b — Calendar UI ⬜
+
+- Calendar view: day, week, stylist column views; drag-to-reschedule
+- Stylist availability respects `WorkingHours` and existing appointments
 
 **Risks:** time zones. Store everything UTC; render in salon's `timezone`. DST edge cases at the salon-hour boundary.
 
