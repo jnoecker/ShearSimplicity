@@ -1,8 +1,10 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -52,6 +54,8 @@ const APPOINTMENT_INCLUDE = {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(PAYMENT_PROVIDER)
@@ -280,6 +284,35 @@ export class PaymentsService {
       // same refund object on retry rather than issuing a second one.
       idempotencyKey: `${payment.id}:refund:${randomUUID()}`,
     });
+
+    // Only update accounting when the provider actually returned the funds.
+    // For `pending` (typically ACH), the charge.refunded webhook will fire
+    // when the transfer settles and update the row then. For terminal
+    // failure modes we surface a 502 so the operator knows nothing
+    // happened — without this, the row would be marked REFUNDED with
+    // refundedCents bumped even though the customer hasn't been credited.
+    if (result.status !== "succeeded") {
+      if (result.status === "pending") {
+        this.logger.log(
+          `Refund ${result.providerRefundId} on Payment ${payment.id} is pending; charge.refunded webhook will finalise.`,
+        );
+        return {
+          providerRefundId: result.providerRefundId,
+          refundedCents: payment.refundedCents,
+        };
+      }
+      // failed / canceled / requires_action — refund did not (yet) move
+      // any money. Surface to the caller so they don't think the
+      // customer was credited.
+      this.logger.warn(
+        `Refund ${result.providerRefundId} on Payment ${payment.id} returned status=${result.status}; no accounting update.`,
+      );
+      throw new BadGatewayException({
+        message: `Refund did not complete (status: ${result.status})`,
+        refundStatus: result.status,
+        providerRefundId: result.providerRefundId,
+      });
+    }
 
     const newRefundedCents = payment.refundedCents + result.amountCents;
     const fullyRefunded = newRefundedCents >= totalCharged;

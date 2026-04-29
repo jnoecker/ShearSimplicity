@@ -388,4 +388,65 @@ describe("PaymentsService.refund", () => {
       service.refund(SALON_ID, ACTOR_ID, PAYMENT_ID, {}),
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it("does not update Payment when the provider returns pending (ACH-style)", async () => {
+    const { service, paymentUpdate, domainEventCreate } = buildService({
+      refundTargetPayment: {
+        id: PAYMENT_ID,
+        salonId: SALON_ID,
+        appointmentId: APPOINTMENT_ID,
+        status: PaymentStatus.SUCCEEDED,
+        provider: "STRIPE",
+        providerPaymentId: "pi_test_456",
+        amountCents: 11000,
+        tipCents: 0,
+        refundedCents: 0,
+      },
+      refundProviderResult: {
+        providerRefundId: "re_test_pending",
+        status: "pending",
+        amountCents: 11000,
+      },
+    });
+
+    const result = await service.refund(SALON_ID, ACTOR_ID, PAYMENT_ID, {});
+
+    expect(result).toMatchObject({
+      providerRefundId: "re_test_pending",
+      // Status didn't actually settle — the row's refundedCents stays
+      // at the pre-call value. The charge.refunded webhook will catch
+      // up when the funds move.
+      refundedCents: 0,
+    });
+    expect(paymentUpdate).not.toHaveBeenCalled();
+    expect(domainEventCreate).not.toHaveBeenCalled();
+  });
+
+  it("throws 502 (no Payment update) when the provider returns failed", async () => {
+    const { service, paymentUpdate, domainEventCreate } = buildService({
+      refundTargetPayment: {
+        id: PAYMENT_ID,
+        salonId: SALON_ID,
+        appointmentId: APPOINTMENT_ID,
+        status: PaymentStatus.SUCCEEDED,
+        provider: "STRIPE",
+        providerPaymentId: "pi_test_456",
+        amountCents: 11000,
+        tipCents: 0,
+        refundedCents: 0,
+      },
+      refundProviderResult: {
+        providerRefundId: "re_test_failed",
+        status: "failed",
+        amountCents: 0,
+      },
+    });
+
+    await expect(
+      service.refund(SALON_ID, ACTOR_ID, PAYMENT_ID, {}),
+    ).rejects.toMatchObject({ status: 502 });
+
+    expect(paymentUpdate).not.toHaveBeenCalled();
+    expect(domainEventCreate).not.toHaveBeenCalled();
+  });
 });
