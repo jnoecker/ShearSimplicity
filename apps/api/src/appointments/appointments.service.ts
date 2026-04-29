@@ -169,8 +169,12 @@ export class AppointmentsService {
           internalNotes: input.internalNotes ?? null,
           createdById: actorUserId,
           services: {
+            // salonId is not a settable field on AppointmentService nested
+            // creates — Prisma derives it from the parent appointment via the
+            // composite FK. Including it raises "Unknown argument salonId"
+            // at runtime even though TS doesn't catch the excess prop in
+            // .map() callbacks.
             create: orderedServices.map((s, i) => ({
-              salonId,
               serviceId: s.id,
               serviceNameSnapshot: s.name,
               priceSnapshotCents: s.defaultPriceCents,
