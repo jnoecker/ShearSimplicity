@@ -738,7 +738,9 @@ function StaffField({
               key={s.id}
               type="button"
               className={`bk-staff${isOn ? " is-on" : ""}`}
-              onClick={() => onSelect(s.id)}
+              aria-pressed={isOn}
+              title={isOn ? "Click to clear" : undefined}
+              onClick={() => onSelect(isOn ? "" : s.id)}
             >
               <span
                 className="bk-staff-avatar"
