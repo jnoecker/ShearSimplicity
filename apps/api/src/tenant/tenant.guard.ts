@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
@@ -12,6 +13,11 @@ import { PUBLIC_KEY } from "../auth/public.decorator";
 import { SKIP_TENANT_KEY } from "./skip-tenant.decorator";
 import type { ActiveSalon } from "../context/request-context";
 import type { Role } from "@shearsimp/shared";
+
+// RFC 4122 UUID, any version. Validated at the boundary so malformed
+// values surface as a 400 rather than reaching Prisma and turning into a 500.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Resolves the active salon for the current request and verifies the
@@ -81,10 +87,23 @@ export class TenantGuard implements CanActivate {
 
   private resolveSalonId(req: Request): string | null {
     const hint = req.identity?.salonHint?.salonId;
-    if (hint) return hint;
+    if (hint) {
+      // The hint comes from a verified auth source (cookie / Clerk session)
+      // but we still validate to fail loudly if a future provider returns
+      // a malformed value.
+      if (!UUID_RE.test(hint)) {
+        throw new BadRequestException("Invalid salon id from auth provider");
+      }
+      return hint;
+    }
 
     const header = req.header("x-salon-id");
-    if (typeof header === "string" && header.length > 0) return header;
+    if (typeof header === "string" && header.length > 0) {
+      if (!UUID_RE.test(header)) {
+        throw new BadRequestException("Invalid x-salon-id header");
+      }
+      return header;
+    }
 
     return null;
   }

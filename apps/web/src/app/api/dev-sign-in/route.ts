@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env";
 import { DEV_SESSION_COOKIE, signDevSession } from "@/lib/dev-session";
 
-export async function POST(): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   if (serverEnv.authProvider !== "dev") {
     return NextResponse.json(
       { error: "Dev sign-in disabled (AUTH_PROVIDER != dev)" },
@@ -20,9 +20,9 @@ export async function POST(): Promise<NextResponse> {
     serverEnv.devAuthSecret,
   );
 
-  const res = NextResponse.redirect(new URL("/", "http://localhost:3000"), {
-    status: 303,
-  });
+  // Build redirect from the incoming request URL so this works under
+  // 127.0.0.1, Codespaces, preview domains, etc.
+  const res = NextResponse.redirect(new URL("/", req.url), { status: 303 });
   res.cookies.set(DEV_SESSION_COOKIE, cookie, {
     httpOnly: true,
     sameSite: "lax",
