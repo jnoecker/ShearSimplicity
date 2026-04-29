@@ -172,14 +172,21 @@ Outbound first, inbound second. Reminder jobs separate from confirmations.
 - Vitest coverage for fresh send, retry dedup, missing-payload skip,
   status-already-cancelled-on-reschedule skip, no-phone skip
 
-### Phase 4b-2 — Reminder scheduling ⬜
+### Phase 4b-2 — Reminder scheduling 🚧
 
-- Reuse `OutboxEvent.nextAttemptAt` for deferred sends (cheaper than pulling
-  in BullMQ for one feature; the outbox already has scheduling primitives)
-- New event type `appointment.reminder_due` emitted on create with
-  `nextAttemptAt = startAt - 24h`; reschedule updates the time, cancel marks
-  the row `COMPLETED`
-- Worker tick already polls by `nextAttemptAt`, so no leasing changes needed
+- New event type `appointment.reminder_due`. Reuses `OutboxEvent.nextAttemptAt`
+  for deferred dispatch (the worker's existing poll already filters on it,
+  so no leasing/queue changes were needed).
+- `create()` schedules with `nextAttemptAt = startAt - 24h`. Same-day
+  bookings end up with a past `nextAttemptAt` and fire on the next tick,
+  which is the correct behaviour.
+- `reschedule()` does an `updateMany` to move the still-`PENDING` row
+  forward/back; rows that already fired don't match (status moved past
+  PENDING) and stay as-is — once a reminder went out for the old time, we
+  can't unsend it.
+- `cancel()` marks the still-`PENDING` row `COMPLETED` to suppress firing.
+- Handler skips on CANCELLED / NO_SHOW / COMPLETED status (belt + suspenders
+  for races) and on a startAt that's already past at fire time.
 
 ### Phase 4b-3 — Per-salon Twilio numbers ⬜
 

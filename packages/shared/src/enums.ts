@@ -98,6 +98,8 @@ export const EventType = {
   PAYMENT_SUCCEEDED: "payment.succeeded",
   PAYMENT_REFUNDED: "payment.refunded",
 
+  APPOINTMENT_REMINDER_DUE: "appointment.reminder_due",
+
   MESSAGE_SMS_SENT: "message.sms_sent",
   MESSAGE_SMS_RECEIVED: "message.sms_received",
 

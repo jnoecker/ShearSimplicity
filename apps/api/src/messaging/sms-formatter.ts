@@ -62,6 +62,22 @@ export function formatCancelSms(input: CancelForSms): string {
   );
 }
 
+interface ReminderForSms {
+  startAt: Date;
+  staffFirstName: string;
+  clientFirstName: string;
+  salonName: string;
+  salonTimezone: string;
+}
+
+export function formatReminderSms(input: ReminderForSms): string {
+  const when = formatDateTimeLabel(input.startAt, input.salonTimezone);
+  return (
+    `${input.salonName}: Reminder — your appointment with ` +
+    `${input.staffFirstName} is ${when}. Reply STOP to opt out.`
+  );
+}
+
 function formatDateTimeLabel(instant: Date, timeZone: string): string {
   // "Thu Apr 30 at 1:00 PM" — combined so reschedule/cancel bodies stay
   // inside one segment with both before/after.
