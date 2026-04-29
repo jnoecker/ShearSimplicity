@@ -251,4 +251,14 @@ describe("appointmentListQuerySchema", () => {
     });
     expect(parsed.status).toBeUndefined();
   });
+
+  it("rejects unknown status tokens with a 400-shaped error", () => {
+    expect(() =>
+      appointmentListQuerySchema.parse({
+        from: "2026-05-01T00:00:00Z",
+        to: "2026-05-02T00:00:00Z",
+        status: "SCHEDULED,BOGUS",
+      }),
+    ).toThrow(/Unknown appointment status: BOGUS/);
+  });
 });

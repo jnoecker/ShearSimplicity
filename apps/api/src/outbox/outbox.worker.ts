@@ -33,7 +33,26 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.log("OutboxWorker disabled via OUTBOX_WORKER_DISABLED");
       return;
     }
+    // Reclaim any rows a previous worker left in PROCESSING (crash, hard
+    // restart). Phase 4's BullMQ-backed worker will lease rows properly with
+    // a heartbeat; this stub has no leasing, so the only safe rule is "if
+    // it's PROCESSING at boot, nobody is working on it."
+    void this.reclaimStaleProcessing();
     this.scheduleNext(0);
+  }
+
+  private async reclaimStaleProcessing() {
+    try {
+      const { count } = await this.prisma.outboxEvent.updateMany({
+        where: { status: OutboxStatus.PROCESSING },
+        data: { status: OutboxStatus.PENDING },
+      });
+      if (count > 0) {
+        this.logger.log(`Reclaimed ${count} stale PROCESSING outbox row(s)`);
+      }
+    } catch (err) {
+      this.logger.error("Outbox reclaim failed", err as Error);
+    }
   }
 
   onModuleDestroy() {
@@ -87,15 +106,16 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   private async processOne(event: OutboxEvent) {
     try {
-      await this.prisma.outboxEvent.update({
-        where: { id: event.id },
-        data: { status: OutboxStatus.PROCESSING, attempts: { increment: 1 } },
-      });
       await dispatch(event);
+      // Single terminal write per attempt: a crash mid-dispatch leaves the
+      // row in PENDING and the next tick retries it. Phase 4 introduces
+      // proper leasing (claim with FOR UPDATE SKIP LOCKED + worker heartbeat
+      // via BullMQ); the stub deliberately avoids non-leased PROCESSING.
       await this.prisma.outboxEvent.update({
         where: { id: event.id },
         data: {
           status: OutboxStatus.COMPLETED,
+          attempts: { increment: 1 },
           processedAt: new Date(),
           lastError: null,
         },

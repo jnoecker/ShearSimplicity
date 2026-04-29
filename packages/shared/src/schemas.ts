@@ -284,15 +284,26 @@ export const appointmentListQuerySchema = z.object({
   from: isoDateTime,
   to: isoDateTime,
   staffMemberId: uuidSchema.optional(),
-  // CSV is awkward for arrays; comma-split for convenience.
+  // CSV is awkward for arrays; comma-split for convenience. Each token is
+  // validated against the enum so an unknown value surfaces as a 400 here
+  // rather than a Prisma 500 later.
   status: z
     .string()
     .optional()
-    .transform((s) =>
-      s
-        ? (s.split(",").map((v) => v.trim()).filter(Boolean) as AppointmentStatus[])
-        : undefined,
-    ),
+    .transform((s, ctx) => {
+      if (!s) return undefined;
+      const tokens = s.split(",").map((v) => v.trim()).filter(Boolean);
+      const valid = new Set<string>(Object.values(AppointmentStatus));
+      const bad = tokens.filter((t) => !valid.has(t));
+      if (bad.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Unknown appointment status: ${bad.join(", ")}`,
+        });
+        return z.NEVER;
+      }
+      return tokens as AppointmentStatus[];
+    }),
 });
 
 export type AppointmentCreateInput = z.infer<typeof appointmentCreateSchema>;
