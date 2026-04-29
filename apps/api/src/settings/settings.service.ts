@@ -1,0 +1,66 @@
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { EventType } from "@shearsimp/shared";
+import type { SalonSettingsUpdateInput } from "@shearsimp/shared";
+import { PrismaService } from "../prisma/prisma.service";
+import { appendDomainEvent } from "../common/domain-events";
+
+@Injectable()
+export class SettingsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async get(salonId: string) {
+    const salon = await this.prisma.salon.findUnique({
+      where: { id: salonId },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        timezone: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    if (!salon) throw new NotFoundException("Salon not found");
+    return salon;
+  }
+
+  async update(
+    salonId: string,
+    actorUserId: string,
+    input: SalonSettingsUpdateInput,
+  ) {
+    const data: Prisma.SalonUpdateInput = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.timezone !== undefined) data.timezone = input.timezone;
+
+    return this.prisma.$transaction(async (tx) => {
+      const salon = await tx.salon.update({
+        where: { id: salonId },
+        data,
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          timezone: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      await appendDomainEvent(tx, {
+        salonId,
+        aggregateType: "SALON",
+        aggregateId: salonId,
+        eventType: EventType.SALON_UPDATED,
+        payload: {
+          changes: input,
+          after: { name: salon.name, timezone: salon.timezone },
+        },
+        actorUserId,
+      });
+      return salon;
+    });
+  }
+}

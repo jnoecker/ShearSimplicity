@@ -72,7 +72,7 @@ Replace `DevAuthProvider` with a real auth flow without changing controllers.
 
 **Risks:** Clerk's Next SDK is intrusive; treat its boundary carefully so swap-back to dev mode stays cheap. Don't leak Clerk types into shared packages.
 
-## Phase 2 — Core salon data ⬜
+## Phase 2 — Core salon data 🚧
 
 CRUD UIs and APIs for the entities the rest of the product depends on.
 

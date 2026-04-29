@@ -52,7 +52,7 @@ export function Sidebar({ activeHref }: { activeHref: string }) {
         </ul>
       </nav>
       <div className="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-400">
-        Phase 1 · Foundation
+        Phase 2 · Core data
       </div>
     </aside>
   );

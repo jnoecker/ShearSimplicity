@@ -7,6 +7,10 @@ import { TenantModule } from "./tenant/tenant.module";
 import { TenantGuard } from "./tenant/tenant.guard";
 import { HealthController } from "./health/health.controller";
 import { SalonsModule } from "./salons/salons.module";
+import { StaffModule } from "./staff/staff.module";
+import { ServicesModule } from "./services/services.module";
+import { ClientsModule } from "./clients/clients.module";
+import { SettingsModule } from "./settings/settings.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 
 // AuthGuard runs first; TenantGuard depends on the identity it attaches to
@@ -18,6 +22,10 @@ import { WebhooksModule } from "./webhooks/webhooks.module";
     AuthModule,
     TenantModule,
     SalonsModule,
+    StaffModule,
+    ServicesModule,
+    ClientsModule,
+    SettingsModule,
     WebhooksModule,
   ],
   controllers: [HealthController],
