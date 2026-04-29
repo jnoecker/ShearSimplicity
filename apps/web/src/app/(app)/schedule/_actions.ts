@@ -143,12 +143,14 @@ export async function cancelAppointment(input: {
 
 /**
  * Server action wrapper for the checkout flow. Calls the API to create a
- * Stripe Checkout Session for an appointment, then routes the user to the
- * returned URL via Next's redirect() — which throws a special control-flow
- * exception, so this function "returns" only on the failure path.
+ * Stripe Checkout Session for an appointment (with optional tip), then
+ * routes the user to the returned URL via Next's redirect() — which
+ * throws a special control-flow exception, so this function "returns"
+ * only on the failure path.
  */
 export async function startCheckoutAction(
   appointmentId: string,
+  tipCents = 0,
 ): Promise<ActionResult> {
   let url: string;
   try {
@@ -156,7 +158,7 @@ export async function startCheckoutAction(
       "/payments/checkout",
       {
         method: "POST",
-        data: { appointmentId },
+        data: { appointmentId, tipCents: tipCents > 0 ? tipCents : undefined },
       },
     );
     url = res.url;
@@ -166,4 +168,19 @@ export async function startCheckoutAction(
   // redirect() throws — must be outside the try / catch so Next's
   // NEXT_REDIRECT control-flow exception isn't swallowed by `fail()`.
   redirect(url);
+}
+
+export async function refundPaymentAction(
+  paymentId: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/payments/${paymentId}/refund`, {
+      method: "POST",
+      data: {},
+    });
+    revalidatePath("/schedule");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }

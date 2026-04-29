@@ -3,7 +3,11 @@ export const PAYMENT_PROVIDER = Symbol("PaymentProvider");
 export interface CreateCheckoutSessionArgs {
   /** Our internal Payment.id; passed to the provider as their idempotency key. */
   idempotencyKey: string;
+  /** Subtotal — the services portion only, no tip. */
   amountCents: number;
+  /** Optional gratuity. Rendered as a separate line item on the checkout
+   *  page + receipt so customers can see what they tipped. Defaults to 0. */
+  tipCents?: number;
   currency: string;
   /** Where Stripe redirects on success / cancel. The provider may append
    *  query params (e.g. session_id) — both URLs end up in the user's browser. */
@@ -20,6 +24,23 @@ export interface CreateCheckoutSessionArgs {
 export interface CreateCheckoutSessionResult {
   providerSessionId: string;
   url: string;
+}
+
+export interface RefundArgs {
+  /** The provider's payment-intent id (or session id when intent isn't yet
+   *  known — Stripe is happy with either for refunds). */
+  providerPaymentId: string;
+  /** Optional partial-refund amount. Omit for a full refund. */
+  amountCents?: number;
+  /** Idempotency key — typically a uuid scoped to one refund attempt. */
+  idempotencyKey: string;
+}
+
+export interface RefundResult {
+  providerRefundId: string;
+  /** Stripe-reported refund status: succeeded / pending / failed. */
+  status: "succeeded" | "pending" | "failed" | "canceled" | "requires_action";
+  amountCents: number;
 }
 
 export interface ParsedWebhookEvent {
@@ -46,5 +67,6 @@ export interface PaymentProvider {
   createCheckoutSession(
     args: CreateCheckoutSessionArgs,
   ): Promise<CreateCheckoutSessionResult>;
+  refundPayment(args: RefundArgs): Promise<RefundResult>;
   verifyAndParseWebhook(rawBody: Buffer, signature: string): ParsedWebhookEvent;
 }

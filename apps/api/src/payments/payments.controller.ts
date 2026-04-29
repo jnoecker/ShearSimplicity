@@ -3,11 +3,18 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
 } from "@nestjs/common";
-import { checkoutCreateSchema } from "@shearsimp/shared";
-import type { CheckoutCreateInput } from "@shearsimp/shared";
+import {
+  checkoutCreateSchema,
+  refundCreateSchema,
+} from "@shearsimp/shared";
+import type {
+  CheckoutCreateInput,
+  RefundCreateInput,
+} from "@shearsimp/shared";
 import { CurrentSalon } from "../tenant/current-salon.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type {
@@ -75,5 +82,23 @@ export class PaymentsController {
       user.userId,
       input,
     );
+  }
+
+  // POST /payments/:id/refund: issues a refund against a SUCCEEDED
+  // payment. Body is empty for a full refund or { amountCents } for
+  // partial. The charge.refunded webhook updates status idempotently
+  // shortly after; the inline update lets the UI flip immediately.
+  @Post(":id/refund")
+  async refund(
+    @CurrentSalon() salon: ActiveSalon,
+    @CurrentUser() user: AuthIdentity,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(refundCreateSchema))
+    input: RefundCreateInput,
+  ): Promise<{ providerRefundId: string; refundedCents: number }> {
+    if (!UUID_RE.test(id)) {
+      throw new BadRequestException(`"${id}" is not a valid UUID`);
+    }
+    return this.payments.refund(salon.salonId, user.userId, id, input);
   }
 }

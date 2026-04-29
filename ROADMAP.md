@@ -239,11 +239,24 @@ PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
   now embeds success/cancel URLs so the page can complete the flow with
   a real synthetic webhook event and redirect, mirroring production
 
-### Phase 5c — Tips + refunds ⬜
+### Phase 5c — Tips + refunds 🚧
 
-- Tip capture flow at checkout
-- Refund initiation + UI
-- `charge.refunded` / `charge.dispute.*` webhook handlers
+- Inline tip picker on the appointment detail panel — preset percents
+  (15 / 18 / 20 / 25) plus a custom dollar input. "Pay now" expands the
+  picker; "Confirm" creates the Stripe Checkout Session with a separate
+  "Tip" line item so the customer sees the breakdown on the receipt.
+- `Payment.amountCents` stores the services subtotal; `tipCents` is the
+  breakdown. Total charged = `amountCents + tipCents`.
+- Refund button on SUCCEEDED payments — `POST /payments/:id/refund`,
+  inline DB update for instant UI feedback, and `charge.refunded`
+  webhook for Stripe-side confirmation (idempotent against the inline
+  update).
+- `charge.refunded` updates `refundedCents` and flips status to
+  `REFUNDED` (full) or `PARTIALLY_REFUNDED` (partial).
+- 5c MVP supports full refunds via UI; partial refunds work end-to-end
+  but the picker is full-only. Partial-refund UI is a follow-up.
+- Disputes (`charge.dispute.*`) intentionally not handled — needs a new
+  `DISPUTED` status on `PaymentStatus`. Tracked separately.
 
 **Single platform Stripe account for now.** Migration to Stripe Connect (per-salon merchant accounts, platform fee on each charge) tracked as [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — not on the critical path until a salon needs their own merchant account.
 

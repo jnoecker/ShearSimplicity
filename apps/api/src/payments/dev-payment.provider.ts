@@ -6,6 +6,8 @@ import type {
   CreateCheckoutSessionResult,
   ParsedWebhookEvent,
   PaymentProvider,
+  RefundArgs,
+  RefundResult,
 } from "./payment-provider.interface";
 
 /**
@@ -33,8 +35,10 @@ export class DevPaymentProvider implements PaymentProvider {
       throw new Error("DevPaymentProvider must not run in production");
     }
     const sid = `dev_cs_${randomUUID()}`;
+    const tipCents = args.tipCents ?? 0;
+    const totalCents = args.amountCents + tipCents;
     this.logger.log(
-      `[dev-checkout] sid=${sid} amount=${args.amountCents} ${args.currency} product=${JSON.stringify(args.productName)} success=${args.successUrl}`,
+      `[dev-checkout] sid=${sid} subtotal=${args.amountCents} tip=${tipCents} total=${totalCents} ${args.currency} product=${JSON.stringify(args.productName)} success=${args.successUrl}`,
     );
     // The dev URL points at the simulator at apps/web/src/app/dev/checkout.
     // We embed the success / cancel URLs so the simulator can finish the
@@ -42,7 +46,9 @@ export class DevPaymentProvider implements PaymentProvider {
     // happens in the simulator, mirroring what Stripe does in production.
     const params = new URLSearchParams({
       sid,
-      amount: String(args.amountCents),
+      amount: String(totalCents),
+      subtotal: String(args.amountCents),
+      tip: String(tipCents),
       currency: args.currency,
       product: args.productName,
       success: args.successUrl,
@@ -50,6 +56,21 @@ export class DevPaymentProvider implements PaymentProvider {
     });
     const url = `${env.WEB_ORIGIN}/dev/checkout?${params.toString()}`;
     return { providerSessionId: sid, url };
+  }
+
+  async refundPayment(args: RefundArgs): Promise<RefundResult> {
+    if (env.NODE_ENV === "production") {
+      throw new Error("DevPaymentProvider must not run in production");
+    }
+    const refundId = `dev_re_${randomUUID()}`;
+    this.logger.log(
+      `[dev-refund] refundId=${refundId} target=${args.providerPaymentId} amount=${args.amountCents ?? "full"}`,
+    );
+    return {
+      providerRefundId: refundId,
+      status: "succeeded",
+      amountCents: args.amountCents ?? 0,
+    };
   }
 
   verifyAndParseWebhook(rawBody: Buffer, _signature: string): ParsedWebhookEvent {

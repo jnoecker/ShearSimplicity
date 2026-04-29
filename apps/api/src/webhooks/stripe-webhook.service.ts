@@ -26,6 +26,15 @@ interface PaymentIntentPayload {
   metadata?: Record<string, string | undefined> | null;
 }
 
+interface ChargePayload {
+  id: string;
+  payment_intent?: string | null;
+  amount?: number | null;
+  amount_refunded?: number | null;
+  refunded?: boolean | null;
+  metadata?: Record<string, string | undefined> | null;
+}
+
 /**
  * Applies a verified Stripe event to our Payment rows. Wraps each handler
  * in a transaction that:
@@ -35,7 +44,8 @@ interface PaymentIntentPayload {
  * The (source, externalEventId) unique constraint makes Stripe re-deliveries
  * a no-op — a P2002 from the insert means we've seen this event before.
  *
- * Refunds + disputes intentionally skipped — those land in 5c.
+ * Disputes (charge.dispute.*) intentionally skipped — those land in
+ * a follow-up that needs a DISPUTED status on PaymentStatus.
  */
 @Injectable()
 export class StripeWebhookService {
@@ -212,6 +222,79 @@ export class StripeWebhookService {
             status: PaymentStatus.FAILED,
             failureReason:
               intent.last_payment_error?.message?.slice(0, 500) ?? null,
+          },
+        });
+        return;
+      }
+
+      case "charge.refunded": {
+        const charge = unwrap<ChargePayload>(event.data);
+        if (!charge?.id) {
+          this.logger.warn(
+            `Stripe charge.refunded event ${event.id} missing charge id — skipping`,
+          );
+          return;
+        }
+        const refundedTotal = charge.amount_refunded ?? 0;
+        if (refundedTotal <= 0) {
+          // Either a stub event or a refund of $0 (which Stripe rejects
+          // upstream anyway). Nothing to do.
+          return;
+        }
+
+        // Match on the payment_intent id we previously stored on the
+        // Payment row when checkout.session.completed fired.
+        const intentId = charge.payment_intent ?? null;
+        const payment = intentId
+          ? await tx.payment.findFirst({
+              where: { provider: "STRIPE", providerPaymentId: intentId },
+              select: {
+                id: true,
+                salonId: true,
+                appointmentId: true,
+                amountCents: true,
+                tipCents: true,
+                refundedCents: true,
+              },
+            })
+          : null;
+        if (!payment) {
+          this.logger.warn(
+            `Stripe charge.refunded for intent ${intentId ?? "?"} has no matching Payment row — skipping`,
+          );
+          return;
+        }
+        if (refundedTotal <= payment.refundedCents) {
+          // Already accounted for (refund-then-webhook ordering, or a
+          // re-delivery that beat us to the punch). Nothing to do.
+          return;
+        }
+
+        const totalCharged = payment.amountCents + payment.tipCents;
+        const fullyRefunded = refundedTotal >= totalCharged;
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: fullyRefunded
+              ? PaymentStatus.REFUNDED
+              : PaymentStatus.PARTIALLY_REFUNDED,
+            refundedCents: refundedTotal,
+          },
+        });
+        await tx.domainEvent.create({
+          data: {
+            salonId: payment.salonId,
+            aggregateType: "PAYMENT",
+            aggregateId: payment.id,
+            eventType: EventType.PAYMENT_REFUNDED,
+            payload: {
+              appointmentId: payment.appointmentId,
+              chargeId: charge.id,
+              refundedCentsTotal: refundedTotal,
+              fullyRefunded,
+              source: "webhook",
+            } satisfies Prisma.InputJsonValue,
+            actorType: ActorType.WEBHOOK,
           },
         });
         return;

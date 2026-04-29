@@ -6,6 +6,8 @@ import type {
   CreateCheckoutSessionResult,
   ParsedWebhookEvent,
   PaymentProvider,
+  RefundArgs,
+  RefundResult,
 } from "./payment-provider.interface";
 
 /**
@@ -37,19 +39,35 @@ export class StripePaymentProvider implements PaymentProvider {
   async createCheckoutSession(
     args: CreateCheckoutSessionArgs,
   ): Promise<CreateCheckoutSessionResult> {
+    const tipCents = args.tipCents ?? 0;
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      {
+        quantity: 1,
+        price_data: {
+          currency: args.currency.toLowerCase(),
+          unit_amount: args.amountCents,
+          product_data: { name: args.productName },
+        },
+      },
+    ];
+    if (tipCents > 0) {
+      // Render tip as its own line item so the customer sees the breakdown
+      // on the Stripe-hosted checkout page and on the receipt. The
+      // PaymentIntent we get back is for the sum (services + tip).
+      lineItems.push({
+        quantity: 1,
+        price_data: {
+          currency: args.currency.toLowerCase(),
+          unit_amount: tipCents,
+          product_data: { name: "Tip" },
+        },
+      });
+    }
+
     const session = await this.client.checkout.sessions.create(
       {
         mode: "payment",
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: args.currency.toLowerCase(),
-              unit_amount: args.amountCents,
-              product_data: { name: args.productName },
-            },
-          },
-        ],
+        line_items: lineItems,
         success_url: args.successUrl,
         cancel_url: args.cancelUrl,
         customer_email: args.customerEmail,
@@ -75,9 +93,29 @@ export class StripePaymentProvider implements PaymentProvider {
       );
     }
     this.logger.log(
-      `Created Stripe Checkout Session sid=${session.id} amount=${args.amountCents} ${args.currency}`,
+      `Created Stripe Checkout Session sid=${session.id} subtotal=${args.amountCents} tip=${tipCents} ${args.currency}`,
     );
     return { providerSessionId: session.id, url: session.url };
+  }
+
+  async refundPayment(args: RefundArgs): Promise<RefundResult> {
+    const refund = await this.client.refunds.create(
+      {
+        payment_intent: args.providerPaymentId,
+        ...(args.amountCents !== undefined
+          ? { amount: args.amountCents }
+          : {}),
+      },
+      { idempotencyKey: args.idempotencyKey },
+    );
+    this.logger.log(
+      `Issued Stripe refund id=${refund.id} target=${args.providerPaymentId} amount=${refund.amount} status=${refund.status}`,
+    );
+    return {
+      providerRefundId: refund.id,
+      status: (refund.status ?? "pending") as RefundResult["status"],
+      amountCents: refund.amount,
+    };
   }
 
   verifyAndParseWebhook(rawBody: Buffer, signature: string): ParsedWebhookEvent {
