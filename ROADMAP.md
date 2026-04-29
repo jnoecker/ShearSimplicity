@@ -86,12 +86,13 @@ CRUD UIs and APIs for the entities the rest of the product depends on.
 
 **Definition of done:** can create a salon, add 3 stylists with hours, add 5 services in 2 categories, add 10 clients, all without touching the database directly.
 
-## Phase 3 — Scheduling 🚧
+## Phase 3 — Scheduling ✅
 
-Where the product earns its keep. Split into sub-phases so each PR stays
-focused.
+Where the product earns its keep. Shipped as five focused PRs.
 
-### Phase 3a — Scheduling backend 🚧
+### Phase 3a — Scheduling backend ✅
+
+PR: [#6](https://github.com/jnoecker/ShearSimplicity/pull/6)
 
 - Create / reschedule / cancel appointments with conflict detection (no overlap on same stylist)
 - Status state machine: `SCHEDULED → CONFIRMED → CHECKED_IN → IN_PROGRESS → COMPLETED` (plus `CANCELLED`, `NO_SHOW`)
@@ -100,10 +101,45 @@ focused.
 - Capture `actualStartAt` / `actualEndAt` / `actualDurationMinutes` on completion (Phase 6 will use these as ground truth)
 - Outbox worker stub: process `appointment.created` events (no side effects yet — wired in Phase 4)
 
-### Phase 3b — Calendar UI ⬜
+### Phase 3b — Calendar UI ✅
 
-- Calendar view: day, week, stylist column views; drag-to-reschedule
+PR: [#7](https://github.com/jnoecker/ShearSimplicity/pull/7)
+
+- Day-view calendar with stylist columns + drag-to-reschedule
 - Stylist availability respects `WorkingHours` and existing appointments
+- 15-minute grid at 14px/slot; service-coded color blocks; per-stylist header tints
+- Foundation for the design system (Cormorant + Quicksand + Great Vibes, Tresses palette)
+
+### Phase 3c — Restyle dashboard + CRUD ✅
+
+PR: [#8](https://github.com/jnoecker/ShearSimplicity/pull/8)
+
+- Dashboard, Staff, Services, Clients, Settings, Messages all rebuilt against the design system
+
+### Phase 3d — Sign-in + client profile hero ✅
+
+PR: [#9](https://github.com/jnoecker/ShearSimplicity/pull/9)
+
+- Sign-in card on the orb-blanket background; client profile hero with photo halo, mini-stats, history timeline
+
+### Phase 3e — Booking flow ✅
+
+PR: [#10](https://github.com/jnoecker/ShearSimplicity/pull/10)
+
+- `/schedule/new` page with client picker, services multi-select, stylist tiles, and the month → day calendar with per-day color load bars
+- Open-slot rendering gated by selected service duration
+
+### Phase 3f — Booking modal ✅
+
+The `/schedule/new` standalone page got rebuilt as a centered modal opened in-place
+on `/schedule` (`?book=1` query state, so back/forward and shareable URLs work).
+
+- Glass modal shell over the schedule, blurred orb backdrop, serif title
+- Rich client picker (avatar + meta row, "Change" reveals an inline search popover)
+- Services as a single-trigger dropdown — search, category-grouped, picks render back as colored tag chips
+- Stylist 4-up cards
+- Reuses the Phase 3e two-step calendar (month → day) inside the modal body
+- `/schedule/new` redirects to `/schedule?book=1` so old links keep working
 
 **Risks:** time zones. Store everything UTC; render in salon's `timezone`. DST edge cases at the salon-hour boundary.
 

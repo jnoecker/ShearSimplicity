@@ -7,7 +7,7 @@ import { categoryKind, type CategoryKind } from "@/lib/service-categories";
 import type {
   BookService,
   BookStaff,
-} from "./book-appointment-form";
+} from "./book-appointment-modal";
 
 const DOWS = ["S", "M", "T", "W", "T", "F", "S"];
 const SLOT_MIN = 15;
