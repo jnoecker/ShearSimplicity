@@ -1006,3 +1006,16 @@
   text-decoration: none;
 }
 .ss-action .ss-action-title { width: 100%; text-align: center; }
+
+/* Cancelled / no-show: muted neutral so a CANCELLED appointment in the
+   client history doesn't visually read as confirmed. */
+.ss-status-pill.is-cancelled {
+  background: rgba(122, 163, 173, 0.18);
+  color: var(--ss-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.theme-twilight .ss-status-pill.is-cancelled {
+  background: rgba(168, 200, 208, 0.14);
+  color: var(--ss-text-muted);
+}

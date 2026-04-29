@@ -5,6 +5,10 @@ import {
   formatTimeInTimezone,
   todayIsoInTimezone,
 } from "@/lib/salon-time";
+import {
+  statusPill,
+  type AppointmentStatus,
+} from "@/lib/appointment-status";
 
 interface SettingsResponse {
   timezone: string;
@@ -13,7 +17,7 @@ interface SettingsResponse {
 interface DashboardAppointment {
   id: string;
   startAt: string;
-  status: "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+  status: AppointmentStatus;
   client: { id: string; displayName: string };
   staffMember: { id: string; displayName: string };
   services: { serviceNameSnapshot: string; durationSnapshotMinutes: number }[];
@@ -26,16 +30,6 @@ interface StaffRow {
   color: string | null;
   isActive: boolean;
 }
-
-const STATUS_PILL: Record<DashboardAppointment["status"], { cls: string; label: string }> = {
-  SCHEDULED:    { cls: "is-pending",   label: "scheduled" },
-  CONFIRMED:    { cls: "is-confirmed", label: "confirmed" },
-  CHECKED_IN:   { cls: "is-checked",   label: "checked in" },
-  IN_PROGRESS:  { cls: "is-progress",  label: "in progress" },
-  COMPLETED:    { cls: "is-checked",   label: "completed" },
-  CANCELLED:    { cls: "is-pending",   label: "cancelled" },
-  NO_SHOW:      { cls: "is-pending",   label: "no-show" },
-};
 
 // Per-stylist gradient palette so the dashboard avatars match the schedule
 // page's column headers.
@@ -165,7 +159,7 @@ export default async function DashboardPage() {
                   (acc, s) => acc + s.durationSnapshotMinutes,
                   0,
                 );
-                const pill = STATUS_PILL[a.status];
+                const pill = statusPill(a.status);
                 const services = a.services
                   .map((s) => s.serviceNameSnapshot)
                   .join(" · ");

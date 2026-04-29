@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { Card, PageHeader } from "@/components/form";
+import {
+  statusPill,
+  type AppointmentStatus,
+} from "@/lib/appointment-status";
 import { ClientForm } from "../_components/client-form";
 import { updateClientAction, type FormState } from "../_actions";
 
@@ -8,7 +12,7 @@ interface AppointmentRow {
   id: string;
   startAt: string;
   endAt: string;
-  status: string;
+  status: AppointmentStatus;
   staffMember: { id: string; displayName: string };
   services: Array<{
     serviceNameSnapshot: string;
@@ -80,32 +84,35 @@ export default async function ClientDetailPage({
           <p className="ss-empty">No appointments yet.</p>
         ) : (
           <ul className="ss-history">
-            {client.appointments.map((a) => (
-              <li key={a.id} className="ss-history-row">
-                <div>
-                  <div className="ss-history-svc">
-                    {a.services
-                      .map((s) => s.serviceNameSnapshot)
-                      .join(" · ") || "—"}
+            {client.appointments.map((a) => {
+              const pill = statusPill(a.status);
+              return (
+                <li key={a.id} className="ss-history-row">
+                  <div>
+                    <div className="ss-history-svc">
+                      {a.services
+                        .map((s) => s.serviceNameSnapshot)
+                        .join(" · ") || "—"}
+                    </div>
+                    <div className="ss-history-meta">
+                      With <strong>{a.staffMember.displayName}</strong>
+                    </div>
                   </div>
-                  <div className="ss-history-meta">
-                    With <strong>{a.staffMember.displayName}</strong>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="ss-history-date">
+                      {new Date(a.startAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </div>
+                    <span className={`ss-status-pill ${pill.cls}`}>
+                      {pill.label}
+                    </span>
                   </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="ss-history-date">
-                    {new Date(a.startAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </div>
-                  <span className="ss-status-pill is-confirmed">
-                    {a.status.toLowerCase().replace("_", " ")}
-                  </span>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
