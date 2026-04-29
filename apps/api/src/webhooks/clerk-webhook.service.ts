@@ -109,6 +109,22 @@ export class ClerkWebhookService {
           [first_name, last_name].filter((p): p is string => Boolean(p)).join(
             " ",
           ) || null;
+        // If an invitation already created a placeholder row keyed on email
+        // (clerkUserId still null), adopt it. Without this, user.created for
+        // an invited user collides on the email unique index.
+        if (email) {
+          const placeholder = await tx.user.findUnique({
+            where: { email },
+            select: { id: true, clerkUserId: true },
+          });
+          if (placeholder && placeholder.clerkUserId === null) {
+            await tx.user.update({
+              where: { id: placeholder.id },
+              data: { clerkUserId: id, email, displayName },
+            });
+            return;
+          }
+        }
         await tx.user.upsert({
           where: { clerkUserId: id },
           create: { clerkUserId: id, email, displayName },

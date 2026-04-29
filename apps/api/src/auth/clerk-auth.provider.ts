@@ -96,6 +96,23 @@ export class ClerkAuthProvider implements AuthProvider {
         .filter((p): p is string => Boolean(p))
         .join(" ") || null;
 
+    // organizationInvitation.created may have written a placeholder row
+    // keyed only on email (no clerkUserId yet). Adopt it instead of inserting
+    // a duplicate that would collide on the email unique index.
+    if (email) {
+      const placeholder = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true, clerkUserId: true },
+      });
+      if (placeholder && placeholder.clerkUserId === null) {
+        return this.prisma.user.update({
+          where: { id: placeholder.id },
+          data: { clerkUserId, displayName },
+          select: { id: true, email: true },
+        });
+      }
+    }
+
     return this.prisma.user.upsert({
       where: { clerkUserId },
       create: { clerkUserId, email, displayName },
