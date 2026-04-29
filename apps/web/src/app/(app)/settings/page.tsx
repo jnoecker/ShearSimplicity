@@ -1,21 +1,31 @@
-import { EmptyState } from "@/components/empty-state";
+import { apiFetch } from "@/lib/api";
+import { Card, PageHeader } from "@/components/form";
+import { SettingsForm } from "./_components/settings-form";
 
-export default function SettingsPage() {
+interface SalonSettings {
+  id: string;
+  slug: string;
+  name: string;
+  timezone: string;
+}
+
+export default async function SettingsPage() {
+  const settings = await apiFetch<SalonSettings>("/settings");
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          Settings
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Salon details, branding, business hours, and integrations.
-        </p>
-      </header>
-      <EmptyState
-        title="Settings coming in Phase 2"
-        body="Salon profile, business hours, payment provider, and SMS sender configuration."
-        phase="Phase 2"
+      <PageHeader
+        title="Settings"
+        description="Salon profile and timezone. Business hours, branding, and integrations land later."
       />
+      <Card>
+        <SettingsForm
+          defaults={{
+            name: settings.name,
+            timezone: settings.timezone,
+            slug: settings.slug,
+          }}
+        />
+      </Card>
     </div>
   );
 }

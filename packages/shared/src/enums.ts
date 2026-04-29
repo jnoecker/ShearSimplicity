@@ -93,6 +93,17 @@ export const EventType = {
   CLIENT_CREATED: "client.created",
   CLIENT_UPDATED: "client.updated",
 
+  STAFF_CREATED: "staff.created",
+  STAFF_UPDATED: "staff.updated",
+  WORKING_HOURS_UPDATED: "staff.working_hours_updated",
+
+  SERVICE_CATEGORY_CREATED: "service_category.created",
+  SERVICE_CATEGORY_UPDATED: "service_category.updated",
+  SERVICE_CREATED: "service.created",
+  SERVICE_UPDATED: "service.updated",
+
+  SALON_UPDATED: "salon.updated",
+
   AI_DURATION_ESTIMATE_GENERATED: "ai.duration_estimate_generated",
   AI_RECOMMENDATION_SHOWN: "ai.recommendation_shown",
   AI_RECOMMENDATION_ACCEPTED: "ai.recommendation_accepted",
