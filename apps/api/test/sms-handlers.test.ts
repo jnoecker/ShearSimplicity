@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppointmentStatus, MessageStatus, Prisma } from "@prisma/client";
 import { SmsHandlersService } from "../src/messaging/sms-handlers.service";
 import type { MessagingProvider } from "../src/messaging/messaging-provider.interface";
+import { env } from "../src/env";
 
 // Mock prisma + messaging provider so the handler can run end-to-end without
 // a database. The goal is to assert the flow control around send + dedup,
@@ -38,11 +39,13 @@ function buildHandler({
   messageRowId = "00000000-0000-0000-0000-000000000e01",
   existingMessage = null,
   insertThrows = null,
+  salonSmsFromNumber = null,
 }: {
   appointment?: ReturnType<typeof fakeAppointment> | null;
   messageRowId?: string;
   existingMessage?: { id: string; providerMessageId: string | null } | null;
   insertThrows?: Error | null;
+  salonSmsFromNumber?: string | null;
 }) {
   const sendSms = vi.fn().mockResolvedValue({
     providerMessageId: "SM_test_sid",
@@ -69,6 +72,7 @@ function buildHandler({
       findUnique: vi.fn().mockResolvedValue({
         name: "Bella's Salon",
         timezone: "America/New_York",
+        smsFromNumber: salonSmsFromNumber,
       }),
     },
     message: {
@@ -134,6 +138,41 @@ describe("SmsHandlersService.handleAppointmentCreated", () => {
     expect(domainEventCreate.mock.calls[0]![0].data.eventType).toBe(
       "message.sms_sent",
     );
+  });
+
+  it("uses the salon's smsFromNumber when set, ignoring the env fallback", async () => {
+    const { handler, sendSms, messageCreate } = buildHandler({
+      appointment: fakeAppointment(),
+      salonSmsFromNumber: "+15551112222",
+    });
+
+    await handler.handleAppointmentCreated(event);
+
+    expect(sendSms.mock.calls[0]![0].from).toBe("+15551112222");
+    expect(messageCreate.mock.calls[0]![0].data.fromAddress).toBe(
+      "+15551112222",
+    );
+  });
+
+  it("skips when neither salon nor env has a from-number", async () => {
+    // env is loaded once at module init from process.env, so we mutate the
+    // cached object directly rather than reach for vi.mock — the handler
+    // reads `env.TWILIO_FROM_NUMBER`, not `process.env`.
+    const prev = env.TWILIO_FROM_NUMBER;
+    (env as { TWILIO_FROM_NUMBER?: string }).TWILIO_FROM_NUMBER = undefined;
+    try {
+      const { handler, sendSms, messageCreate } = buildHandler({
+        appointment: fakeAppointment(),
+        salonSmsFromNumber: null,
+      });
+
+      await handler.handleAppointmentCreated(event);
+
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(sendSms).not.toHaveBeenCalled();
+    } finally {
+      (env as { TWILIO_FROM_NUMBER?: string }).TWILIO_FROM_NUMBER = prev;
+    }
   });
 
   it("does not double-send when retried after a successful send (outboxEventId dedup, constraint-name target)", async () => {

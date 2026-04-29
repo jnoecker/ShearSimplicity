@@ -17,6 +17,7 @@ export class SettingsService {
         slug: true,
         name: true,
         timezone: true,
+        smsFromNumber: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -34,6 +35,9 @@ export class SettingsService {
     const data: Prisma.SalonUpdateInput = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.timezone !== undefined) data.timezone = input.timezone;
+    if (input.smsFromNumber !== undefined) {
+      data.smsFromNumber = input.smsFromNumber;
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const salon = await tx.salon.update({
@@ -44,6 +48,7 @@ export class SettingsService {
           slug: true,
           name: true,
           timezone: true,
+          smsFromNumber: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -56,7 +61,11 @@ export class SettingsService {
         eventType: EventType.SALON_UPDATED,
         payload: {
           changes: input,
-          after: { name: salon.name, timezone: salon.timezone },
+          after: {
+            name: salon.name,
+            timezone: salon.timezone,
+            smsFromNumber: salon.smsFromNumber,
+          },
         },
         actorUserId,
       });

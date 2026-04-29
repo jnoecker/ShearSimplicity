@@ -105,27 +105,48 @@ export class TwilioWebhookController {
       );
     }
 
-    // Salon routing: find a client by phone. In 4a we expect each phone to
-    // belong to one salon — if we get multiple matches we log and skip
-    // rather than risk routing to the wrong one.
-    const matches = await this.prisma.client.findMany({
-      where: { phone: from },
-      select: { id: true, salonId: true, displayName: true },
-      take: 2,
+    // Salon routing: when a salon claims the destination number via
+    // smsFromNumber we route by `To` directly (Twilio's own routing
+    // primitive). Falling back to sender-phone lookup keeps the dev /
+    // single-shared-number path working until every salon has provisioned
+    // its own number.
+    const salonByNumber = await this.prisma.salon.findUnique({
+      where: { smsFromNumber: to },
+      select: { id: true },
     });
-    if (matches.length === 0) {
-      this.logger.log(
-        `Inbound SMS from ${from} sid=${sid} matched no client — dropping`,
-      );
-      return TWIML_EMPTY;
+    let match: { id: string; salonId: string };
+    if (salonByNumber) {
+      const client = await this.prisma.client.findFirst({
+        where: { salonId: salonByNumber.id, phone: from },
+        select: { id: true, salonId: true },
+      });
+      if (!client) {
+        this.logger.log(
+          `Inbound SMS to ${to} (salon ${salonByNumber.id}) from ${from} sid=${sid} matched no client in that salon — dropping`,
+        );
+        return TWIML_EMPTY;
+      }
+      match = client;
+    } else {
+      const fallback = await this.prisma.client.findMany({
+        where: { phone: from },
+        select: { id: true, salonId: true },
+        take: 2,
+      });
+      if (fallback.length === 0) {
+        this.logger.log(
+          `Inbound SMS from ${from} sid=${sid} matched no client — dropping`,
+        );
+        return TWIML_EMPTY;
+      }
+      if (fallback.length > 1) {
+        this.logger.warn(
+          `Inbound SMS from ${from} sid=${sid} matched ${fallback.length} clients across salons — ambiguous, dropping`,
+        );
+        return TWIML_EMPTY;
+      }
+      match = fallback[0]!;
     }
-    if (matches.length > 1) {
-      this.logger.warn(
-        `Inbound SMS from ${from} sid=${sid} matched ${matches.length} clients — ambiguous, dropping`,
-      );
-      return TWIML_EMPTY;
-    }
-    const match = matches[0]!;
 
     try {
       await this.prisma.$transaction(async (tx) => {

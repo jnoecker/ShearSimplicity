@@ -329,13 +329,26 @@ export type AppointmentListQueryInput = z.infer<
 // branding land later.)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// E.164 format: leading +, then 1–14 digits. Twilio enforces this on its
+// side too; the shared schema rejects malformed values up front so the
+// UI gets a meaningful error instead of a 4xx from the carrier.
+const e164Schema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{1,14}$/, "Must be in E.164 format, e.g. +15555550100");
+
 export const salonSettingsUpdateSchema = z
   .object({
     name: trimmedString(120).optional(),
     timezone: timezoneSchema.optional(),
+    // null = clear the salon's number; undefined = leave it alone.
+    smsFromNumber: z.union([e164Schema, z.null()]).optional(),
   })
   .refine(
-    (s) => s.name !== undefined || s.timezone !== undefined,
+    (s) =>
+      s.name !== undefined ||
+      s.timezone !== undefined ||
+      s.smsFromNumber !== undefined,
     "Provide at least one field to update",
   );
 
