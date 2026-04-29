@@ -62,7 +62,7 @@ export function Topbar({
       </button>
 
       <Link
-        href="/schedule?new=1"
+        href="/schedule/new"
         className="ss-icon-btn"
         aria-label="New appointment"
       >

@@ -6,6 +6,8 @@ import { apiFetch, ApiError } from "@/lib/api";
 export interface ActionResult {
   ok: boolean;
   message?: string;
+  /** When the API returns a created resource we want to navigate to. */
+  appointmentId?: string;
 }
 
 function fail(e: unknown): ActionResult {
@@ -16,6 +18,59 @@ function fail(e: unknown): ActionResult {
     return { ok: false, message: e.message };
   }
   return { ok: false, message: "Request failed" };
+}
+
+interface ClientSearchHit {
+  id: string;
+  displayName: string;
+  phone: string | null;
+  email: string | null;
+}
+
+// Server-side client search so the booking flow stays correct beyond the API
+// list cap (take: 200 on /clients). The same `q` parameter the GET /clients
+// endpoint already supports does the heavy lifting; we just forward it.
+export async function searchClientsAction(
+  q: string,
+): Promise<ClientSearchHit[]> {
+  const trimmed = q.trim();
+  try {
+    return await apiFetch<ClientSearchHit[]>("/clients", {
+      query: { q: trimmed.length > 0 ? trimmed : undefined },
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function createAppointmentAction(input: {
+  clientId: string;
+  staffMemberId: string;
+  serviceIds: string[];
+  startAtIso: string;
+  notes?: string;
+  internalNotes?: string;
+}): Promise<ActionResult> {
+  try {
+    const created = await apiFetch<{ id: string }>("/appointments", {
+      method: "POST",
+      data: {
+        clientId: input.clientId,
+        staffMemberId: input.staffMemberId,
+        serviceIds: input.serviceIds,
+        startAt: input.startAtIso,
+        notes: input.notes && input.notes.length > 0 ? input.notes : undefined,
+        internalNotes:
+          input.internalNotes && input.internalNotes.length > 0
+            ? input.internalNotes
+            : undefined,
+      },
+    });
+    revalidatePath("/schedule");
+    return { ok: true, appointmentId: created.id };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function rescheduleAppointment(input: {
