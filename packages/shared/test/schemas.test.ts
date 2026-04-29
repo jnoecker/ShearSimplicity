@@ -150,6 +150,19 @@ describe("clientUpdateSchema", () => {
   it("accepts an empty update (no-op)", () => {
     expect(clientUpdateSchema.parse({})).toEqual({});
   });
+
+  it("collapses blank optional fields to null so updates can clear them", () => {
+    const parsed = clientUpdateSchema.parse({
+      lastName: "",
+      email: "",
+      phone: "",
+      notes: "",
+    });
+    expect(parsed.lastName).toBeNull();
+    expect(parsed.email).toBeNull();
+    expect(parsed.phone).toBeNull();
+    expect(parsed.notes).toBeNull();
+  });
 });
 
 describe("salonSettingsUpdateSchema", () => {

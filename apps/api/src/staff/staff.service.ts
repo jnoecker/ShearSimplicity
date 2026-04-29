@@ -85,6 +85,11 @@ export class StaffService {
     if (input.color !== undefined) data.color = input.color;
     if (input.bio !== undefined) data.bio = input.bio;
     if (input.isActive !== undefined) data.isActive = input.isActive;
+    if (input.userId !== undefined) {
+      data.user = input.userId
+        ? { connect: { id: input.userId } }
+        : { disconnect: true };
+    }
 
     try {
       return await this.prisma.$transaction(async (tx) => {

@@ -42,13 +42,18 @@ const phoneSchema = z
   .transform((s) => (s === undefined || s === "" ? null : s))
   .nullable();
 
-const emailSchema = z
-  .string()
-  .transform((s) => s.trim().toLowerCase())
-  .pipe(z.string().email().max(254))
-  .optional()
-  .transform((s) => (s === undefined || s === "" ? null : s))
-  .nullable();
+// Empty strings come from cleared form fields and must round-trip to null on
+// update so the user can actually remove a saved address. Preprocess collapses
+// blank/undefined to null up front so the inner email validator never sees an
+// empty string (which it would otherwise reject as malformed).
+const emailSchema = z.preprocess(
+  (v) => {
+    if (typeof v !== "string") return v ?? null;
+    const t = v.trim().toLowerCase();
+    return t === "" ? null : t;
+  },
+  z.string().email().max(254).nullable(),
+);
 
 const slugSchema = z
   .string()

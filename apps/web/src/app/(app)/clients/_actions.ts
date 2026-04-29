@@ -22,15 +22,25 @@ function toFormErrors(parsed: { error: { issues: ReadonlyArray<{ path: ReadonlyA
 function readClient(formData: FormData) {
   return {
     firstName: String(formData.get("firstName") ?? ""),
-    lastName: optional(formData.get("lastName")),
-    displayName: optional(formData.get("displayName")),
-    email: optional(formData.get("email")),
-    phone: optional(formData.get("phone")),
-    notes: optional(formData.get("notes")),
+    // For nullable model fields we pass the empty string through so the shared
+    // schema's transforms collapse it to null — that's how a user clears a
+    // previously-saved value. Treating empty as undefined would silently drop
+    // the change on update.
+    lastName: passthrough(formData.get("lastName")),
+    email: passthrough(formData.get("email")),
+    phone: passthrough(formData.get("phone")),
+    notes: passthrough(formData.get("notes")),
+    // displayName is non-null in the model; empty means "no change" rather
+    // than "clear" (clientCreateSchema's First-Last fallback handles new rows).
+    displayName: omitIfBlank(formData.get("displayName")),
   };
 }
 
-function optional(v: FormDataEntryValue | null): string | undefined {
+function passthrough(v: FormDataEntryValue | null): string | undefined {
+  return v === null ? undefined : String(v);
+}
+
+function omitIfBlank(v: FormDataEntryValue | null): string | undefined {
   if (v === null) return undefined;
   const s = String(v);
   return s.length === 0 ? undefined : s;
