@@ -9,6 +9,7 @@ import { EventType } from "@shearsimp/shared";
 import { env } from "../env";
 import { PrismaService } from "../prisma/prisma.service";
 import { SmsHandlersService } from "../messaging/sms-handlers.service";
+import { AppointmentSeriesService } from "../appointments/series.service";
 
 const POLL_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 25;
@@ -28,6 +29,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly smsHandlers: SmsHandlersService,
+    private readonly seriesService: AppointmentSeriesService,
   ) {}
 
   onModuleInit() {
@@ -159,6 +161,9 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
         return;
       case EventType.APPOINTMENT_REMINDER_DUE:
         await this.smsHandlers.handleAppointmentReminderDue(event);
+        return;
+      case EventType.APPOINTMENT_SERIES_TOP_OFF_DUE:
+        await this.seriesService.handleTopOffDue(event);
         return;
       default:
         // Unknown event types are silently completed so a bad row can't wedge
