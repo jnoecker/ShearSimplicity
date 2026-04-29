@@ -81,7 +81,12 @@ export class StripeWebhookService {
         }
         const payment = await tx.payment.findFirst({
           where: { provider: "STRIPE", providerPaymentId: session.id },
-          select: { id: true, salonId: true, status: true },
+          select: {
+            id: true,
+            salonId: true,
+            status: true,
+            appointmentId: true,
+          },
         });
         if (!payment) {
           this.logger.warn(
@@ -94,17 +99,57 @@ export class StripeWebhookService {
           // Don't re-emit the domain event.
           return;
         }
+
         const succeeded = session.payment_status === "paid";
+        const intentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : null;
+
+        // Defence-in-depth against double-charge. createCheckoutForAppointment
+        // permits multiple PENDING sessions on one appointment so an
+        // abandoned link can be re-attempted without manual cleanup. If a
+        // newer session was completed first, an older one finishing later
+        // would otherwise mark the appointment paid twice — Stripe has
+        // already captured the second charge by the time we see this event,
+        // so the right move is: don't claim SUCCEEDED on this row, mark it
+        // FAILED with a manual-refund flag, and log loudly so ops can
+        // process the refund (auto-refund lands in 5c).
+        if (succeeded && payment.appointmentId) {
+          const otherSucceeded = await tx.payment.findFirst({
+            where: {
+              salonId: payment.salonId,
+              appointmentId: payment.appointmentId,
+              status: PaymentStatus.SUCCEEDED,
+              NOT: { id: payment.id },
+            },
+            select: { id: true },
+          });
+          if (otherSucceeded) {
+            this.logger.error(
+              `Stripe checkout.session ${session.id} succeeded on Payment ${payment.id}, ` +
+                `but Payment ${otherSucceeded.id} already SUCCEEDED for appointment ` +
+                `${payment.appointmentId}. Charge captured by Stripe — manual refund required.`,
+            );
+            await tx.payment.update({
+              where: { id: payment.id },
+              data: {
+                status: PaymentStatus.FAILED,
+                providerPaymentId: intentId ?? session.id,
+                failureReason: `Duplicate charge — appointment ${payment.appointmentId} already paid by Payment ${otherSucceeded.id}. Manual refund required (auto-refund handler arrives in 5c).`,
+              },
+            });
+            return;
+          }
+        }
+
         await tx.payment.update({
           where: { id: payment.id },
           data: {
             status: succeeded ? PaymentStatus.SUCCEEDED : PaymentStatus.PENDING,
             // Once we have the underlying payment_intent we replace the
             // session id with it so future refund webhooks correlate.
-            providerPaymentId:
-              typeof session.payment_intent === "string"
-                ? session.payment_intent
-                : session.id,
+            providerPaymentId: intentId ?? session.id,
             capturedAt: succeeded ? new Date() : null,
           },
         });
@@ -117,10 +162,7 @@ export class StripeWebhookService {
               eventType: EventType.PAYMENT_SUCCEEDED,
               payload: {
                 providerSessionId: session.id,
-                providerPaymentIntentId:
-                  typeof session.payment_intent === "string"
-                    ? session.payment_intent
-                    : null,
+                providerPaymentIntentId: intentId,
                 amountTotal: session.amount_total ?? null,
                 currency: session.currency ?? null,
               } satisfies Prisma.InputJsonValue,

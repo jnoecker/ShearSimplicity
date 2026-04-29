@@ -54,6 +54,13 @@ export class StripePaymentProvider implements PaymentProvider {
         cancel_url: args.cancelUrl,
         customer_email: args.customerEmail,
         metadata: args.metadata,
+        // Stripe doesn't auto-copy Checkout Session metadata onto the
+        // underlying PaymentIntent. Without this, an early
+        // payment_intent.payment_failed (one that arrives before the
+        // session.completed event) has no metadata for our handler to
+        // correlate back to the Payment row, so it'd silently log + skip
+        // and the row would stay PENDING forever.
+        payment_intent_data: { metadata: args.metadata },
       },
       // Stripe's HTTP-level idempotency: a retry with the same key is a no-op
       // and returns the original session. Pairing this with our DB-level
