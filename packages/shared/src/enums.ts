@@ -29,6 +29,14 @@ export const AppointmentSource = {
 export type AppointmentSource =
   (typeof AppointmentSource)[keyof typeof AppointmentSource];
 
+export const AppointmentSeriesStatus = {
+  ACTIVE: "ACTIVE",
+  CANCELLED: "CANCELLED",
+  COMPLETED: "COMPLETED",
+} as const;
+export type AppointmentSeriesStatus =
+  (typeof AppointmentSeriesStatus)[keyof typeof AppointmentSeriesStatus];
+
 export const PaymentStatus = {
   PENDING: "PENDING",
   SUCCEEDED: "SUCCEEDED",
@@ -75,6 +83,7 @@ export type ActorType = (typeof ActorType)[keyof typeof ActorType];
 
 export const AggregateType = {
   APPOINTMENT: "APPOINTMENT",
+  APPOINTMENT_SERIES: "APPOINTMENT_SERIES",
   CLIENT: "CLIENT",
   PAYMENT: "PAYMENT",
   MESSAGE: "MESSAGE",
@@ -99,6 +108,13 @@ export const EventType = {
   PAYMENT_REFUNDED: "payment.refunded",
 
   APPOINTMENT_REMINDER_DUE: "appointment.reminder_due",
+
+  APPOINTMENT_SERIES_CREATED: "appointment_series.created",
+  APPOINTMENT_SERIES_RESCHEDULED: "appointment_series.rescheduled",
+  APPOINTMENT_SERIES_CANCELLED: "appointment_series.cancelled",
+  APPOINTMENT_SERIES_EXTENDED: "appointment_series.extended",
+  APPOINTMENT_SERIES_COMPLETED: "appointment_series.completed",
+  APPOINTMENT_SERIES_TOP_OFF_DUE: "appointment_series.top_off_due",
 
   MESSAGE_SMS_SENT: "message.sms_sent",
   MESSAGE_SMS_RECEIVED: "message.sms_received",

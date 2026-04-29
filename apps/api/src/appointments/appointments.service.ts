@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  AppointmentSeriesStatus as AppointmentSeriesStatusEnum,
   AppointmentSource as AppointmentSourceEnum,
   AppointmentStatus as AppointmentStatusEnum,
   OutboxStatus,
@@ -261,87 +262,264 @@ export class AppointmentsService {
     const newStart = input.startAt;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    await this.assertNoStylistConflict({
-      salonId,
-      staffMemberId: targetStaffId,
-      startAt: newStart,
-      endAt: newEnd,
-      excludeAppointmentId: id,
-    });
+    // Cascade reschedule onto every future occurrence in the same series.
+    // The delta we apply is in raw milliseconds — wall-clock-preserving math
+    // here would be wrong: the user dragged the block to a specific instant,
+    // so future occurrences shift by the same instant-delta. The series
+    // anchor's wall-clock time is updated below so subsequent top-offs use
+    // the new pattern.
+    const isSeriesCascade =
+      input.scope === "following" && existing.seriesId !== null;
+    if (isSeriesCascade && existing.seriesIndex === null) {
+      // Defensive: a row with seriesId must have seriesIndex too. If the
+      // invariant is broken, fall back to a single-occurrence reschedule
+      // rather than silently shifting nothing.
+      throw new ConflictException(
+        "Cannot cascade-reschedule: appointment is missing seriesIndex",
+      );
+    }
+
+    const cascadeRows = isSeriesCascade
+      ? await this.prisma.appointment.findMany({
+          where: {
+            salonId,
+            seriesId: existing.seriesId!,
+            seriesIndex: { gte: existing.seriesIndex! },
+            // Match canReschedule(): the same statuses that are allowed for
+            // a single reschedule. Omitting CHECKED_IN here would skip the
+            // clicked occurrence itself when the user cascades from a
+            // CHECKED_IN row, leaving it at its old time while the future
+            // ones (and the series anchor) move.
+            status: {
+              in: [
+                AppointmentStatusEnum.SCHEDULED,
+                AppointmentStatusEnum.CONFIRMED,
+                AppointmentStatusEnum.CHECKED_IN,
+              ],
+            },
+          },
+          select: {
+            id: true,
+            seriesIndex: true,
+            startAt: true,
+            endAt: true,
+            staffMemberId: true,
+          },
+          orderBy: [{ seriesIndex: "asc" }],
+        })
+      : [];
+
+    const deltaMs = newStart.getTime() - existing.startAt.getTime();
+    const cascadeUpdates = cascadeRows.map((row) => ({
+      id: row.id,
+      seriesIndex: row.seriesIndex!,
+      previousStartAt: row.startAt,
+      newStartAt: new Date(row.startAt.getTime() + deltaMs),
+      newEndAt: new Date(row.endAt.getTime() + deltaMs),
+    }));
+
+    // Conflict-check the moved row(s). For a single reschedule, that's just
+    // this appointment in its new slot. For a cascade, every shifted row —
+    // and we must exclude *every* sibling cascade row from each check, not
+    // just the one being checked. Otherwise shifting by exactly one cadence
+    // interval makes row N's new time collide with row N+1's still-current
+    // time and produces a false 409.
+    if (isSeriesCascade) {
+      const cascadeIds = cascadeUpdates.map((u) => u.id);
+      for (const u of cascadeUpdates) {
+        await this.assertNoStylistConflict({
+          salonId,
+          staffMemberId: targetStaffId,
+          startAt: u.newStartAt,
+          endAt: u.newEndAt,
+          excludeAppointmentIds: cascadeIds,
+        });
+      }
+    } else {
+      await this.assertNoStylistConflict({
+        salonId,
+        staffMemberId: targetStaffId,
+        startAt: newStart,
+        endAt: newEnd,
+        excludeAppointmentIds: [id],
+      });
+    }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.appointment.update({
-        where: { id },
-        data: {
-          startAt: newStart,
-          endAt: newEnd,
-          ...(input.staffMemberId && input.staffMemberId !== existing.staffMemberId
-            ? {
-                staffMember: {
-                  connect: {
-                    staff_members_id_salonId_key: {
-                      id: input.staffMemberId,
-                      salonId,
-                    },
+      const staffConnect =
+        input.staffMemberId && input.staffMemberId !== existing.staffMemberId
+          ? {
+              staffMember: {
+                connect: {
+                  staff_members_id_salonId_key: {
+                    id: input.staffMemberId,
+                    salonId,
                   },
                 },
-              }
-            : {}),
-        },
-        include: APPOINTMENT_INCLUDE,
-      });
-      await appendDomainEvent(tx, {
-        salonId,
-        aggregateType: "APPOINTMENT",
-        aggregateId: id,
-        eventType: EventType.APPOINTMENT_RESCHEDULED,
-        payload: {
-          before: {
-            startAt: existing.startAt,
-            endAt: existing.endAt,
-            staffMemberId: existing.staffMemberId,
+              },
+            }
+          : {};
+
+      let updated;
+      if (isSeriesCascade && cascadeUpdates.length > 0) {
+        // Apply the same delta to every shifted occurrence and emit per-row
+        // events so each customer's SMS still fires with their correct old
+        // and new times.
+        for (const u of cascadeUpdates) {
+          const before = await tx.appointment.findUniqueOrThrow({
+            where: { id: u.id },
+            select: { startAt: true, endAt: true, staffMemberId: true },
+          });
+          await tx.appointment.update({
+            where: { id: u.id },
+            data: {
+              startAt: u.newStartAt,
+              endAt: u.newEndAt,
+              ...staffConnect,
+            },
+          });
+          await appendDomainEvent(tx, {
+            salonId,
+            aggregateType: "APPOINTMENT",
+            aggregateId: u.id,
+            eventType: EventType.APPOINTMENT_RESCHEDULED,
+            payload: {
+              before: {
+                startAt: before.startAt,
+                endAt: before.endAt,
+                staffMemberId: before.staffMemberId,
+              },
+              after: {
+                startAt: u.newStartAt,
+                endAt: u.newEndAt,
+                staffMemberId: targetStaffId,
+              },
+              cascadedFromSeriesIndex: existing.seriesIndex,
+            } as Prisma.InputJsonValue,
+            actorUserId,
+          });
+          await tx.outboxEvent.create({
+            data: {
+              salonId,
+              eventType: EventType.APPOINTMENT_RESCHEDULED,
+              payload: {
+                id: u.id,
+                salonId,
+                previousStartAt: u.previousStartAt.toISOString(),
+              } as Prisma.InputJsonValue,
+              status: OutboxStatus.PENDING,
+            },
+          });
+          await tx.outboxEvent.updateMany({
+            where: {
+              eventType: EventType.APPOINTMENT_REMINDER_DUE,
+              status: OutboxStatus.PENDING,
+              salonId,
+              payload: { path: ["id"], equals: u.id },
+            },
+            data: {
+              nextAttemptAt: new Date(
+                u.newStartAt.getTime() - REMINDER_LEAD_MS,
+              ),
+            },
+          });
+        }
+
+        // Reset the series anchor so future top-offs continue at the new
+        // pattern. anchorIndex tracks which occurrence the new anchor maps
+        // to; the cadence helper computes occurrence M as
+        // anchor + (M - anchorIndex) * everyNWeeks weeks.
+        await tx.appointmentSeries.update({
+          where: { id: existing.seriesId! },
+          data: {
+            anchorStartAt: newStart,
+            anchorIndex: existing.seriesIndex!,
+            ...(input.staffMemberId &&
+            input.staffMemberId !== existing.staffMemberId
+              ? { staffMemberId: input.staffMemberId }
+              : {}),
           },
-          after: {
-            startAt: updated.startAt,
-            endAt: updated.endAt,
-            staffMemberId: updated.staffMemberId,
-          },
-        },
-        actorUserId,
-      });
-      // Outbox row drives the reschedule SMS in 4b-1. Minimal payload: id +
-      // salonId + previousStartAt. The handler looks up the appointment for
-      // current state (new startAt, services, staff) and uses
-      // previousStartAt only for the "moved from X to Y" wording.
-      await tx.outboxEvent.create({
-        data: {
+        });
+        await appendDomainEvent(tx, {
           salonId,
+          aggregateType: "APPOINTMENT_SERIES",
+          aggregateId: existing.seriesId!,
+          eventType: EventType.APPOINTMENT_SERIES_RESCHEDULED,
+          payload: {
+            fromSeriesIndex: existing.seriesIndex,
+            deltaMs,
+            shiftedOccurrences: cascadeUpdates.length,
+            newStaffMemberId: input.staffMemberId ?? null,
+          } as Prisma.InputJsonValue,
+          actorUserId,
+        });
+        updated = await tx.appointment.findUniqueOrThrow({
+          where: { id },
+          include: APPOINTMENT_INCLUDE,
+        });
+      } else {
+        updated = await tx.appointment.update({
+          where: { id },
+          data: {
+            startAt: newStart,
+            endAt: newEnd,
+            ...staffConnect,
+          },
+          include: APPOINTMENT_INCLUDE,
+        });
+        await appendDomainEvent(tx, {
+          salonId,
+          aggregateType: "APPOINTMENT",
+          aggregateId: id,
           eventType: EventType.APPOINTMENT_RESCHEDULED,
           payload: {
-            id,
+            before: {
+              startAt: existing.startAt,
+              endAt: existing.endAt,
+              staffMemberId: existing.staffMemberId,
+            },
+            after: {
+              startAt: updated.startAt,
+              endAt: updated.endAt,
+              staffMemberId: updated.staffMemberId,
+            },
+          },
+          actorUserId,
+        });
+        // Outbox row drives the reschedule SMS in 4b-1. Minimal payload: id +
+        // salonId + previousStartAt. The handler looks up the appointment for
+        // current state (new startAt, services, staff) and uses
+        // previousStartAt only for the "moved from X to Y" wording.
+        await tx.outboxEvent.create({
+          data: {
             salonId,
-            previousStartAt: existing.startAt.toISOString(),
-          } as Prisma.InputJsonValue,
-          status: OutboxStatus.PENDING,
-        },
-      });
-      // Move the still-pending reminder forward (or back) to match the new
-      // startAt. updateMany skips rows that have already fired (status !=
-      // PENDING), which is the correct behaviour — once a reminder went
-      // out for the old time, we can't unsend it.
-      await tx.outboxEvent.updateMany({
-        where: {
-          eventType: EventType.APPOINTMENT_REMINDER_DUE,
-          status: OutboxStatus.PENDING,
-          salonId,
-          payload: { path: ["id"], equals: id },
-        },
-        data: {
-          nextAttemptAt: new Date(
-            updated.startAt.getTime() - REMINDER_LEAD_MS,
-          ),
-        },
-      });
+            eventType: EventType.APPOINTMENT_RESCHEDULED,
+            payload: {
+              id,
+              salonId,
+              previousStartAt: existing.startAt.toISOString(),
+            } as Prisma.InputJsonValue,
+            status: OutboxStatus.PENDING,
+          },
+        });
+        // Move the still-pending reminder forward (or back) to match the new
+        // startAt. updateMany skips rows that have already fired (status !=
+        // PENDING), which is the correct behaviour — once a reminder went
+        // out for the old time, we can't unsend it.
+        await tx.outboxEvent.updateMany({
+          where: {
+            eventType: EventType.APPOINTMENT_REMINDER_DUE,
+            status: OutboxStatus.PENDING,
+            salonId,
+            payload: { path: ["id"], equals: id },
+          },
+          data: {
+            nextAttemptAt: new Date(
+              updated.startAt.getTime() - REMINDER_LEAD_MS,
+            ),
+          },
+        });
+      }
       return updated;
     });
   }
@@ -357,6 +535,114 @@ export class AppointmentsService {
       throw new ConflictException(
         `Cannot cancel an appointment in status ${existing.status}`,
       );
+    }
+
+    // Cascade: cancel this occurrence + all future + end the series. We
+    // bundle it inline (rather than delegating to AppointmentSeriesService)
+    // because we need the same transactional guarantees the single-cancel
+    // path provides, and the SeriesService method only walks future
+    // occurrences with startAt > now — it would skip the row the user
+    // actually clicked on if it was already in progress (which canCancel
+    // already disallowed) or in the past few seconds.
+    if (input.scope === "following" && existing.seriesId !== null) {
+      return this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const future = await tx.appointment.findMany({
+          where: {
+            salonId,
+            seriesId: existing.seriesId!,
+            seriesIndex: { gte: existing.seriesIndex ?? 0 },
+            status: {
+              in: [
+                AppointmentStatusEnum.SCHEDULED,
+                AppointmentStatusEnum.CONFIRMED,
+                AppointmentStatusEnum.CHECKED_IN,
+                AppointmentStatusEnum.IN_PROGRESS,
+              ],
+            },
+          },
+          select: { id: true, status: true },
+        });
+        for (const appt of future) {
+          if (!canCancel(appt.status)) continue;
+          await tx.appointment.update({
+            where: { id: appt.id },
+            data: {
+              status: AppointmentStatusEnum.CANCELLED,
+              cancelledAt: now,
+              cancellationReason: input.reason ?? "Series ended",
+            },
+          });
+          await appendDomainEvent(tx, {
+            salonId,
+            aggregateType: "APPOINTMENT",
+            aggregateId: appt.id,
+            eventType: EventType.APPOINTMENT_CANCELLED,
+            payload: {
+              previousStatus: appt.status,
+              reason: input.reason ?? "Series ended",
+              cascadedFromSeries: existing.seriesId,
+            } as Prisma.InputJsonValue,
+            actorUserId,
+          });
+          await tx.outboxEvent.create({
+            data: {
+              salonId,
+              eventType: EventType.APPOINTMENT_CANCELLED,
+              payload: { id: appt.id, salonId } as Prisma.InputJsonValue,
+              status: OutboxStatus.PENDING,
+            },
+          });
+          await tx.outboxEvent.updateMany({
+            where: {
+              eventType: EventType.APPOINTMENT_REMINDER_DUE,
+              status: OutboxStatus.PENDING,
+              salonId,
+              payload: { path: ["id"], equals: appt.id },
+            },
+            data: {
+              status: OutboxStatus.COMPLETED,
+              processedAt: now,
+            },
+          });
+        }
+        // Suppress the next top-off and flip the series to CANCELLED.
+        await tx.outboxEvent.updateMany({
+          where: {
+            eventType: EventType.APPOINTMENT_SERIES_TOP_OFF_DUE,
+            status: OutboxStatus.PENDING,
+            salonId,
+            payload: { path: ["seriesId"], equals: existing.seriesId! },
+          },
+          data: {
+            status: OutboxStatus.COMPLETED,
+            processedAt: now,
+          },
+        });
+        await tx.appointmentSeries.update({
+          where: { id: existing.seriesId! },
+          data: {
+            status: AppointmentSeriesStatusEnum.CANCELLED,
+            cancelledAt: now,
+          },
+        });
+        await appendDomainEvent(tx, {
+          salonId,
+          aggregateType: "APPOINTMENT_SERIES",
+          aggregateId: existing.seriesId!,
+          eventType: EventType.APPOINTMENT_SERIES_CANCELLED,
+          payload: {
+            reason: input.reason ?? null,
+            cancelledOccurrences: future.length,
+            cascadedFromAppointment: id,
+          } as Prisma.InputJsonValue,
+          actorUserId,
+        });
+        return tx.appointment.findUniqueOrThrow({
+          where: { id },
+          include: APPOINTMENT_INCLUDE,
+        });
+      });
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -519,7 +805,11 @@ export class AppointmentsService {
     staffMemberId: string;
     startAt: Date;
     endAt: Date;
-    excludeAppointmentId?: string;
+    // Single id (one-off reschedule) or list (cascade reschedule, where all
+    // sibling rows are about to move together and so must be excluded from
+    // each row's conflict check — otherwise a one-cadence shift produces a
+    // false 409 against a sibling still at its old time).
+    excludeAppointmentIds?: string[];
   }) {
     if (args.endAt <= args.startAt) {
       throw new BadRequestException("Appointment endAt must be after startAt");
@@ -531,8 +821,8 @@ export class AppointmentsService {
         status: { in: BLOCKING_STATUSES as AppointmentStatusEnum[] },
         startAt: { lt: args.endAt },
         endAt: { gt: args.startAt },
-        ...(args.excludeAppointmentId
-          ? { NOT: { id: args.excludeAppointmentId } }
+        ...(args.excludeAppointmentIds && args.excludeAppointmentIds.length > 0
+          ? { id: { notIn: args.excludeAppointmentIds } }
           : {}),
       },
       select: { id: true, startAt: true, endAt: true },

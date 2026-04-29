@@ -239,15 +239,23 @@ export const appointmentCreateSchema = z.object({
   source: appointmentSourceSchema.default(AppointmentSource.STAFF),
 });
 
+// Reschedule cascade scope. "one" only moves this occurrence (default,
+// matching the pre-recurrence behaviour). "following" shifts every future
+// occurrence by the same delta and resets the series anchor so subsequent
+// top-offs use the new pattern. Ignored on appointments without a seriesId.
+export const appointmentScopeSchema = z.enum(["one", "following"]);
+
 export const appointmentRescheduleSchema = z.object({
   startAt: isoDateTime,
   // Allow moving to a different stylist as part of a reschedule. When omitted,
   // the existing stylist is kept.
   staffMemberId: uuidSchema.optional(),
+  scope: appointmentScopeSchema.default("one"),
 });
 
 export const appointmentCancelSchema = z.object({
   reason: optionalTrimmed(500),
+  scope: appointmentScopeSchema.default("one"),
 });
 
 export const appointmentNotesUpdateSchema = z
@@ -322,6 +330,53 @@ export type AppointmentCompleteInput = z.infer<
 >;
 export type AppointmentListQueryInput = z.infer<
   typeof appointmentListQuerySchema
+>;
+export type AppointmentScope = z.infer<typeof appointmentScopeSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recurring appointments (issue #19)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Cadence bounds. 1–52 weeks covers everything from "weekly highlights" to
+// "yearly check-in"; the upper bound also caps the wall-clock arithmetic
+// for the materializer. stopAfterVisits null is the indefinite mode (the
+// regular long-term client). When set, 2–52 — a one-visit "series" makes
+// no sense, and 52 is more than a year of weekly visits.
+export const appointmentSeriesCreateSchema = z.object({
+  clientId: uuidSchema,
+  staffMemberId: uuidSchema,
+  serviceIds: z.array(uuidSchema).min(1).max(20),
+  // First occurrence's wall-clock start. The materializer treats this as
+  // the series anchor: subsequent occurrences are at the same wall-clock
+  // time, N weeks later, in the salon's timezone.
+  startAt: isoDateTime,
+  everyNWeeks: z.number().int().min(1).max(52),
+  stopAfterVisits: z.number().int().min(2).max(52).nullable(),
+  notes: optionalNotes,
+  internalNotes: optionalNotes,
+  source: appointmentSourceSchema.default(AppointmentSource.STAFF),
+});
+
+export const appointmentSeriesExtendSchema = z.object({
+  // Add this many additional visits to a finite series. Server enforces
+  // the resulting total stays within stopAfterVisits' max (52). For
+  // indefinite series this endpoint is a no-op — they don't have a cap
+  // to extend.
+  additionalVisits: z.number().int().min(1).max(52),
+});
+
+export const appointmentSeriesCancelSchema = z.object({
+  reason: optionalTrimmed(500),
+});
+
+export type AppointmentSeriesCreateInput = z.infer<
+  typeof appointmentSeriesCreateSchema
+>;
+export type AppointmentSeriesExtendInput = z.infer<
+  typeof appointmentSeriesExtendSchema
+>;
+export type AppointmentSeriesCancelInput = z.infer<
+  typeof appointmentSeriesCancelSchema
 >;
 
 // ─────────────────────────────────────────────────────────────────────────────
