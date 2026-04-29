@@ -565,10 +565,24 @@ function ServicesField({
     <div className="bk-field bk-svc-field">
       <label className="bk-label">Services</label>
       <div className={`bk-svc-combo${open ? " is-open" : ""}`} ref={popRef}>
-        <button
-          type="button"
+        {/* Trigger is a div, not a button. The selected-service tags inside
+            need their own × <button> for removal, and <button> nested inside
+            <button> is invalid HTML — Next strict-mode reports it as a
+            hydration error. role="button" + Enter/Space/Esc keyboard
+            handlers preserve the same a11y affordance. */}
+        <div
+          role="button"
+          tabIndex={0}
           className="bk-svc-trigger"
           onClick={() => setOpen((o) => !o)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setOpen((o) => !o);
+            } else if (e.key === "Escape" && open) {
+              setOpen(false);
+            }
+          }}
           aria-haspopup="listbox"
           aria-expanded={open}
         >
@@ -615,7 +629,7 @@ function ServicesField({
               ▾
             </span>
           </span>
-        </button>
+        </div>
 
         {open && (
           <div className="bk-svc-pop" role="listbox">
