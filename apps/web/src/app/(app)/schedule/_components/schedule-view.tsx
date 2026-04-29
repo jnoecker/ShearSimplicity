@@ -284,6 +284,12 @@ export function ScheduleView({
           </Link>
           <span className="ss-schedule-toolbar-meta">{dayLabel}</span>
         </div>
+        <Link
+          href={`/schedule/new?date=${isoDate}`}
+          className="ss-btn ss-btn-primary"
+        >
+          + New booking
+        </Link>
       </div>
 
       {errorMsg && (
