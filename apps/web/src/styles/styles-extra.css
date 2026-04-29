@@ -2097,6 +2097,39 @@
   border-style: solid;
 }
 
+/* Selected-slot preview. Painted on top of the row of bk-day-open buttons
+   with pointer-events: none, so the user can still click a different open
+   slot (or the same one) while the preview is visible. The "block-y"
+   look makes it clear that this is the duration the appointment will
+   occupy — not just the start handle. */
+.bk-day-pick {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  border-radius: 5px;
+  background: linear-gradient(
+    135deg,
+    rgba(30, 195, 217, 0.32),
+    rgba(30, 195, 217, 0.14)
+  );
+  border: 1px solid var(--ss-magenta);
+  box-shadow: 0 0 0 1px rgba(30, 195, 217, 0.24);
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 3px 6px;
+  z-index: 1;
+}
+.bk-day-pick-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ss-magenta-deep, var(--ss-text-heading));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.theme-twilight .bk-day-pick-label { color: var(--ss-magenta); }
+
 .bk-day-block {
   position: absolute;
   left: 4px;
