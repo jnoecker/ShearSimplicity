@@ -205,15 +205,35 @@ PR: [#17](https://github.com/jnoecker/ShearSimplicity/pull/17)
 - [#25](https://github.com/jnoecker/ShearSimplicity/issues/25) — A2P 10DLC brand + campaign registration
 - [#26](https://github.com/jnoecker/ShearSimplicity/issues/26) — Replace SMS terms / privacy placeholder copy
 
-## Phase 5 — Payments / POS (Stripe Checkout) ⬜
+## Phase 5 — Payments / POS (Stripe Checkout) 🚧
 
-PCI exposure stays minimal — Stripe-hosted surfaces only this phase. Will likely slice into 5a / 5b / 5c the way Phase 4 did; sub-shape decided when 5 starts.
+PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
 
-- Stripe adapter behind a `PaymentProvider` interface
-- Create Checkout Session for an appointment; webhook updates `payments.status` (idempotent on Stripe event ID)
-- Tip capture, receipt URL, refund tracking
-- Appointment checkout state separate from appointment status (an appointment can be `COMPLETED` and `payments.status = PENDING`)
-- Webhook signature validation + idempotency on Stripe `event.id`
+### Phase 5a — Backend payment infrastructure 🚧
+
+- `PaymentProvider` interface, switchable on `PAYMENT_PROVIDER` env
+  (`dev` returns a synthetic checkout URL + sid; `stripe` uses the official SDK)
+- `POST /payments/checkout` creates a Stripe Checkout Session for an appointment
+- Pre-generates the Payment row id and uses it as Stripe's idempotency key,
+  so retries hit Stripe's idempotency cache instead of creating duplicate sessions
+- Rejects with 409 when a SUCCEEDED payment already exists for the appointment
+- Stripe webhook `POST /webhooks/stripe` with HMAC signature verification,
+  deduped on `processed_webhook_events.(source, event.id)`
+- Handles `checkout.session.completed` → SUCCEEDED + `payment.succeeded` event,
+  `payment_intent.payment_failed` → FAILED with reason
+- Refunds + disputes intentionally deferred to 5c
+
+### Phase 5b — Pay-for-appointment UI ⬜
+
+- "Pay now" / "Send payment link" on appointment detail
+- Client-facing receipt + status display
+- Payment column on the schedule view
+
+### Phase 5c — Tips + refunds ⬜
+
+- Tip capture flow at checkout
+- Refund initiation + UI
+- `charge.refunded` / `charge.dispute.*` webhook handlers
 
 **Single platform Stripe account for now.** Migration to Stripe Connect (per-salon merchant accounts, platform fee on each charge) tracked as [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — not on the critical path until a salon needs their own merchant account.
 

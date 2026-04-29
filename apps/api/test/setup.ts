@@ -11,3 +11,4 @@ process.env.DEV_SALON_ID ??= "00000000-0000-0000-0000-0000000000a1";
 process.env.DEV_SALON_SLUG ??= "test-salon";
 process.env.MESSAGING_PROVIDER ??= "dev";
 process.env.TWILIO_FROM_NUMBER ??= "+15555550100";
+process.env.PAYMENT_PROVIDER ??= "dev";

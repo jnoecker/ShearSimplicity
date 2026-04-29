@@ -40,6 +40,11 @@ const schema = z
     // for signature verification when behind a proxy that rewrites the host).
     // Optional: when unset we trust the request's own host header.
     TWILIO_WEBHOOK_PUBLIC_URL: z.string().url().optional(),
+
+    // Phase 5a — payments.
+    PAYMENT_PROVIDER: z.enum(["dev", "stripe"]).default("dev"),
+    STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_PROVIDER === "clerk") {
@@ -69,6 +74,21 @@ const schema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required when MESSAGING_PROVIDER=twilio`,
+          });
+        }
+      }
+    }
+
+    if (env.PAYMENT_PROVIDER === "stripe") {
+      for (const key of [
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET",
+      ] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when PAYMENT_PROVIDER=stripe`,
           });
         }
       }
