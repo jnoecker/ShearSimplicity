@@ -1019,3 +1019,45 @@
   background: rgba(168, 200, 208, 0.14);
   color: var(--ss-text-muted);
 }
+
+/* ====================================================
+   Phase 3d — sign-in dev panel + profile hero polish.
+==================================================== */
+
+.ss-signin-dev-form {
+  display: flex; flex-direction: column; gap: 14px;
+  text-align: left;
+  margin-top: 6px;
+}
+.ss-signin-dev-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--ss-line);
+  background: var(--ss-panel);
+}
+.ss-signin-dev-info > div {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 13px;
+  color: var(--ss-text-primary);
+  word-break: break-word;
+}
+.ss-signin-dev-label {
+  font-family: var(--font-quicksand), sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ss-text-muted);
+}
+.ss-signin-code {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11.5px;
+  background: var(--ss-magenta-pale);
+  color: var(--ss-magenta-deep);
+}

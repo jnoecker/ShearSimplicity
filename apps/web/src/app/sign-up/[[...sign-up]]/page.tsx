@@ -13,8 +13,19 @@ export default async function SignUpPage() {
   if (session) redirect("/");
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
-      <SignUp routing="path" path="/sign-up" />
-    </main>
+    <div className="ss-signin" data-screen-label="signup">
+      <div className="ss-orb ss-orb-magenta" />
+      <div className="ss-orb ss-orb-cyan" />
+      <div className="ss-orb ss-orb-violet" />
+      <div className="ss-signin-card">
+        <div className="ss-signin-mark">
+          <h1 className="ss-brand-script">Shear</h1>
+          <p className="ss-brand-sub">Simplicity</p>
+        </div>
+        <h2>Open a studio</h2>
+        <p className="ss-signin-sub">Create your salon and invite your team.</p>
+        <SignUp routing="path" path="/sign-up" />
+      </div>
+    </div>
   );
 }
