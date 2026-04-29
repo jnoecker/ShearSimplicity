@@ -205,11 +205,13 @@ PR: [#17](https://github.com/jnoecker/ShearSimplicity/pull/17)
 - [#25](https://github.com/jnoecker/ShearSimplicity/issues/25) — A2P 10DLC brand + campaign registration
 - [#26](https://github.com/jnoecker/ShearSimplicity/issues/26) — Replace SMS terms / privacy placeholder copy
 
-## Phase 5 — Payments / POS (Stripe Checkout) 🚧
+## Phase 5 — Payments / POS (Stripe Checkout) ✅
 
-PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
+PCI exposure stays minimal — Stripe-hosted surfaces only this phase. Shipped as three focused PRs.
 
-### Phase 5a — Backend payment infrastructure 🚧
+### Phase 5a — Backend payment infrastructure ✅
+
+PR: [#27](https://github.com/jnoecker/ShearSimplicity/pull/27)
 
 - `PaymentProvider` interface, switchable on `PAYMENT_PROVIDER` env
   (`dev` returns a synthetic checkout URL + sid; `stripe` uses the official SDK)
@@ -221,9 +223,16 @@ PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
   deduped on `processed_webhook_events.(source, event.id)`
 - Handles `checkout.session.completed` → SUCCEEDED + `payment.succeeded` event,
   `payment_intent.payment_failed` → FAILED with reason
-- Refunds + disputes intentionally deferred to 5c
+- Defence-in-depth: a `checkout.session.completed` arriving for an appointment
+  that already has another SUCCEEDED Payment is marked FAILED with a
+  manual-refund flag and logged loudly (the UI auto-refund handler is 5c)
+- `payment_intent_data.metadata` propagates Checkout Session metadata onto
+  the underlying PaymentIntent so early `payment_intent.payment_failed`
+  events can correlate before `session.completed` fires
 
-### Phase 5b — Pay-for-appointment UI 🚧
+### Phase 5b — Pay-for-appointment UI ✅
+
+PR: [#28](https://github.com/jnoecker/ShearSimplicity/pull/28)
 
 - Schedule appointment detail panel gets a payment section: status pill,
   amount, "View Stripe receipt" link when paid, "Pay now" / "Resume" /
@@ -234,12 +243,16 @@ PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
   `paymentCancelled=` variant) explaining the flip-from-Stripe state
 - New `GET /payments?appointmentIds=...` endpoint backing the schedule
   view's per-appointment payment lookup; deduped server-side to the
-  highest-priority status (SUCCEEDED > FAILED > … > PENDING)
+  highest-priority status (SUCCEEDED > FAILED > … > PENDING). Cap of
+  500 ids per request with explicit 400 on overflow; the schedule
+  page chunks at 400 to stay under the cap on busy days.
 - Dev-only Stripe simulator at `/dev/checkout` — the dev provider's URL
   now embeds success/cancel URLs so the page can complete the flow with
   a real synthetic webhook event and redirect, mirroring production
 
-### Phase 5c — Tips + refunds 🚧
+### Phase 5c — Tips + refunds ✅
+
+PR: [#29](https://github.com/jnoecker/ShearSimplicity/pull/29)
 
 - Inline tip picker on the appointment detail panel — preset percents
   (15 / 18 / 20 / 25) plus a custom dollar input. "Pay now" expands the
@@ -253,12 +266,17 @@ PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
   update).
 - `charge.refunded` updates `refundedCents` and flips status to
   `REFUNDED` (full) or `PARTIALLY_REFUNDED` (partial).
-- 5c MVP supports full refunds via UI; partial refunds work end-to-end
-  but the picker is full-only. Partial-refund UI is a follow-up.
-- Disputes (`charge.dispute.*`) intentionally not handled — needs a new
-  `DISPUTED` status on `PaymentStatus`. Tracked separately.
+- Refund accounting is gated on the provider's success status — a
+  pending ACH refund leaves the row untouched (webhook catches up when
+  funds settle); failed / canceled / requires_action refunds throw 502
+  so operators don't see a phantom success.
 
 **Single platform Stripe account for now.** Migration to Stripe Connect (per-salon merchant accounts, platform fee on each charge) tracked as [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — not on the critical path until a salon needs their own merchant account.
+
+### Deferred from Phase 5 — tracked as issues
+
+- [#30](https://github.com/jnoecker/ShearSimplicity/issues/30) — Stripe disputes (`charge.dispute.*`) handler + DISPUTED status
+- [#31](https://github.com/jnoecker/ShearSimplicity/issues/31) — Partial refund UI on the appointment detail panel
 
 **Out of scope (Phase 5.5):** Stripe Terminal, in-person card readers, product sales, inventory, taxes, gift cards/packages.
 
@@ -333,6 +351,8 @@ Cross-phase deferrals — see the `deferred` label on the repo:
 - [#24](https://github.com/jnoecker/ShearSimplicity/issues/24) — Migrate outbox worker to BullMQ (conditional)
 - [#25](https://github.com/jnoecker/ShearSimplicity/issues/25) — A2P 10DLC brand + campaign registration (compliance)
 - [#26](https://github.com/jnoecker/ShearSimplicity/issues/26) — Replace SMS terms / privacy placeholder copy (compliance)
+- [#30](https://github.com/jnoecker/ShearSimplicity/issues/30) — Stripe disputes (`charge.dispute.*`) handler + DISPUTED status
+- [#31](https://github.com/jnoecker/ShearSimplicity/issues/31) — Partial refund UI on the appointment detail panel
 
 ## Working agreements
 
