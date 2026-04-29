@@ -285,10 +285,16 @@ export class AppointmentsService {
             salonId,
             seriesId: existing.seriesId!,
             seriesIndex: { gte: existing.seriesIndex! },
+            // Match canReschedule(): the same statuses that are allowed for
+            // a single reschedule. Omitting CHECKED_IN here would skip the
+            // clicked occurrence itself when the user cascades from a
+            // CHECKED_IN row, leaving it at its old time while the future
+            // ones (and the series anchor) move.
             status: {
               in: [
                 AppointmentStatusEnum.SCHEDULED,
                 AppointmentStatusEnum.CONFIRMED,
+                AppointmentStatusEnum.CHECKED_IN,
               ],
             },
           },
@@ -313,15 +319,20 @@ export class AppointmentsService {
     }));
 
     // Conflict-check the moved row(s). For a single reschedule, that's just
-    // this appointment in its new slot. For a cascade, every shifted row.
+    // this appointment in its new slot. For a cascade, every shifted row —
+    // and we must exclude *every* sibling cascade row from each check, not
+    // just the one being checked. Otherwise shifting by exactly one cadence
+    // interval makes row N's new time collide with row N+1's still-current
+    // time and produces a false 409.
     if (isSeriesCascade) {
+      const cascadeIds = cascadeUpdates.map((u) => u.id);
       for (const u of cascadeUpdates) {
         await this.assertNoStylistConflict({
           salonId,
           staffMemberId: targetStaffId,
           startAt: u.newStartAt,
           endAt: u.newEndAt,
-          excludeAppointmentId: u.id,
+          excludeAppointmentIds: cascadeIds,
         });
       }
     } else {
@@ -330,7 +341,7 @@ export class AppointmentsService {
         staffMemberId: targetStaffId,
         startAt: newStart,
         endAt: newEnd,
-        excludeAppointmentId: id,
+        excludeAppointmentIds: [id],
       });
     }
 
@@ -794,7 +805,11 @@ export class AppointmentsService {
     staffMemberId: string;
     startAt: Date;
     endAt: Date;
-    excludeAppointmentId?: string;
+    // Single id (one-off reschedule) or list (cascade reschedule, where all
+    // sibling rows are about to move together and so must be excluded from
+    // each row's conflict check — otherwise a one-cadence shift produces a
+    // false 409 against a sibling still at its old time).
+    excludeAppointmentIds?: string[];
   }) {
     if (args.endAt <= args.startAt) {
       throw new BadRequestException("Appointment endAt must be after startAt");
@@ -806,8 +821,8 @@ export class AppointmentsService {
         status: { in: BLOCKING_STATUSES as AppointmentStatusEnum[] },
         startAt: { lt: args.endAt },
         endAt: { gt: args.startAt },
-        ...(args.excludeAppointmentId
-          ? { NOT: { id: args.excludeAppointmentId } }
+        ...(args.excludeAppointmentIds && args.excludeAppointmentIds.length > 0
+          ? { id: { notIn: args.excludeAppointmentIds } }
           : {}),
       },
       select: { id: true, startAt: true, endAt: true },

@@ -316,7 +316,7 @@ export class AppointmentSeriesService {
           },
           startAt: { gt: now },
         },
-        select: { id: true },
+        select: { id: true, status: true },
       });
 
       for (const appt of future) {
@@ -334,7 +334,7 @@ export class AppointmentSeriesService {
           aggregateId: appt.id,
           eventType: EventType.APPOINTMENT_CANCELLED,
           payload: {
-            previousStatus: AppointmentStatusEnum.SCHEDULED,
+            previousStatus: appt.status,
             reason: input.reason ?? "Series ended",
             cascadedFromSeries: seriesId,
           } as Prisma.InputJsonValue,
