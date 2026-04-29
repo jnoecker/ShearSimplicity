@@ -9,6 +9,7 @@ import {
 import {
   ScheduleView,
   type ScheduleAppointment,
+  type SchedulePayment,
   type ScheduleStaff,
   type ScheduleService,
 } from "./_components/schedule-view";
@@ -43,6 +44,8 @@ export default async function SchedulePage({
     month?: string;
     staff?: string;
     client?: string;
+    paid?: string;
+    paymentCancelled?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -63,6 +66,19 @@ export default async function SchedulePage({
     apiFetch<ScheduleStaff[]>("/staff"),
     apiFetch<ScheduleService[]>("/services"),
   ]);
+
+  // Fetch the day's payments after the appointment query so we can scope
+  // by ID — keeps the list cap meaningful and avoids dragging in payments
+  // for other days that happen to share an appointment id (they won't,
+  // but the server enforces the cap anyway).
+  const payments =
+    appointments.length > 0
+      ? await apiFetch<SchedulePayment[]>("/payments", {
+          query: {
+            appointmentIds: appointments.map((a) => a.id).join(","),
+          },
+        })
+      : [];
 
   const prevIso = shiftIsoDate(isoDate, -1, tz);
   const nextIso = shiftIsoDate(isoDate, 1, tz);
@@ -93,6 +109,9 @@ export default async function SchedulePage({
         appointments={appointments}
         staff={staff.filter((s) => s.isActive)}
         services={services}
+        payments={payments}
+        paidAppointmentId={params.paid ?? null}
+        paymentCancelledAppointmentId={params.paymentCancelled ?? null}
       />
       {bookOpen && bookingData && (
         <BookingModalMount

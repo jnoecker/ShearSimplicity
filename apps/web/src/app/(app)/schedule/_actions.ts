@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { apiFetch, ApiError } from "@/lib/api";
 
@@ -138,4 +139,31 @@ export async function cancelAppointment(input: {
   } catch (e) {
     return fail(e);
   }
+}
+
+/**
+ * Server action wrapper for the checkout flow. Calls the API to create a
+ * Stripe Checkout Session for an appointment, then routes the user to the
+ * returned URL via Next's redirect() — which throws a special control-flow
+ * exception, so this function "returns" only on the failure path.
+ */
+export async function startCheckoutAction(
+  appointmentId: string,
+): Promise<ActionResult> {
+  let url: string;
+  try {
+    const res = await apiFetch<{ url: string; paymentId: string }>(
+      "/payments/checkout",
+      {
+        method: "POST",
+        data: { appointmentId },
+      },
+    );
+    url = res.url;
+  } catch (e) {
+    return fail(e);
+  }
+  // redirect() throws — must be outside the try / catch so Next's
+  // NEXT_REDIRECT control-flow exception isn't swallowed by `fail()`.
+  redirect(url);
 }

@@ -50,6 +50,45 @@ export class PaymentsService {
     private readonly provider: PaymentProviderImpl,
   ) {}
 
+  /**
+   * Lookup payments by appointment id, scoped to the current salon. Used by
+   * the schedule view to colour blocks and gate the "Pay now" button.
+   *
+   * Filtered to one row per appointment using the highest-priority status
+   * (SUCCEEDED > FAILED > CANCELLED > PENDING) so the UI sees the most
+   * important state — "succeeded" wins over a stale PENDING / FAILED on a
+   * separate session for the same appointment.
+   */
+  async listForAppointments(salonId: string, appointmentIds: string[]) {
+    if (appointmentIds.length === 0) return [];
+    const rows = await this.prisma.payment.findMany({
+      where: {
+        salonId,
+        appointmentId: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        appointmentId: true,
+        status: true,
+        amountCents: true,
+        currency: true,
+        receiptUrl: true,
+        capturedAt: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: "desc" }],
+    });
+    const winner = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) {
+      if (!r.appointmentId) continue;
+      const existing = winner.get(r.appointmentId);
+      if (!existing || rank(r.status) > rank(existing.status)) {
+        winner.set(r.appointmentId, r);
+      }
+    }
+    return Array.from(winner.values());
+  }
+
   async createCheckoutForAppointment(
     salonId: string,
     actorUserId: string,
@@ -156,6 +195,27 @@ export class PaymentsService {
       });
       return { url: session.url, paymentId };
     });
+  }
+}
+
+// SUCCEEDED is the most informative state and should win over a stale
+// PENDING / FAILED row from an earlier checkout attempt on the same
+// appointment.
+function rank(status: PaymentStatus): number {
+  switch (status) {
+    case PaymentStatus.SUCCEEDED:
+      return 5;
+    case PaymentStatus.PARTIALLY_REFUNDED:
+      return 4;
+    case PaymentStatus.REFUNDED:
+      return 3;
+    case PaymentStatus.FAILED:
+      return 2;
+    case PaymentStatus.CANCELLED:
+      return 1;
+    case PaymentStatus.PENDING:
+    default:
+      return 0;
   }
 }
 

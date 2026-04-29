@@ -36,9 +36,19 @@ export class DevPaymentProvider implements PaymentProvider {
     this.logger.log(
       `[dev-checkout] sid=${sid} amount=${args.amountCents} ${args.currency} product=${JSON.stringify(args.productName)} success=${args.successUrl}`,
     );
-    // The dev URL points at a stub on the web side that simulates the
-    // user clicking through — Phase 5b wires up the actual route.
-    const url = `${env.WEB_ORIGIN}/dev/checkout?sid=${sid}&amount=${args.amountCents}`;
+    // The dev URL points at the simulator at apps/web/src/app/dev/checkout.
+    // We embed the success / cancel URLs so the simulator can finish the
+    // flow with a real redirect — `{CHECKOUT_SESSION_ID}` substitution
+    // happens in the simulator, mirroring what Stripe does in production.
+    const params = new URLSearchParams({
+      sid,
+      amount: String(args.amountCents),
+      currency: args.currency,
+      product: args.productName,
+      success: args.successUrl,
+      cancel: args.cancelUrl,
+    });
+    const url = `${env.WEB_ORIGIN}/dev/checkout?${params.toString()}`;
     return { providerSessionId: sid, url };
   }
 
