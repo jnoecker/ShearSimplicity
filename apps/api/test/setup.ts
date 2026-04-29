@@ -9,3 +9,5 @@ process.env.DEV_USER_ID ??= "00000000-0000-0000-0000-000000000001";
 process.env.DEV_USER_EMAIL ??= "dev@shearsimp.test";
 process.env.DEV_SALON_ID ??= "00000000-0000-0000-0000-0000000000a1";
 process.env.DEV_SALON_SLUG ??= "test-salon";
+process.env.MESSAGING_PROVIDER ??= "dev";
+process.env.TWILIO_FROM_NUMBER ??= "+15555550100";

@@ -14,6 +14,7 @@ import { AppointmentsModule } from "./appointments/appointments.module";
 import { OutboxModule } from "./outbox/outbox.module";
 import { SettingsModule } from "./settings/settings.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
+import { MessagingModule } from "./messaging/messaging.module";
 
 // AuthGuard runs first; TenantGuard depends on the identity it attaches to
 // the request. Order matters: Nest evaluates global guards in registration
@@ -28,6 +29,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module";
     ServicesModule,
     ClientsModule,
     AppointmentsModule,
+    MessagingModule,
     OutboxModule,
     SettingsModule,
     WebhooksModule,

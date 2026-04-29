@@ -439,6 +439,11 @@ model Message {
   body               String
   // Idempotency against provider re-delivery.
   providerMessageId  String?
+  // Outbound dedup: the OutboxEvent that produced this Message. Worker INSERTs
+  // a Message row before calling the provider, so a retry hits the unique
+  // constraint and short-circuits — preventing duplicate sends even when the
+  // provider call succeeds and the post-send DB write crashes.
+  outboxEventId      String?          @db.Uuid
   errorCode          String?
   errorMessage       String?
   createdAt          DateTime         @default(now())
@@ -452,6 +457,7 @@ model Message {
   client Client? @relation(fields: [clientId, salonId], references: [id, salonId], onDelete: Restrict)
 
   @@unique([channel, providerMessageId])
+  @@unique([outboxEventId])
   @@index([salonId, clientId, createdAt])
   @@index([salonId, direction, createdAt])
   @@map("messages")

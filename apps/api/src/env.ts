@@ -28,20 +28,49 @@ const schema = z
     // Next.js to expose it to the browser); the API reads the same value.
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
     CLERK_WEBHOOK_SECRET: z.string().optional(),
+
+    // Phase 4a — messaging.
+    MESSAGING_PROVIDER: z.enum(["dev", "twilio"]).default("dev"),
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
+    // Single from-number for all salons in 4a. Per-salon numbers land in 4b
+    // along with the salon-settings UI.
+    TWILIO_FROM_NUMBER: z.string().optional(),
+    // Public origin Twilio POSTs webhooks to (used to reconstruct the URL
+    // for signature verification when behind a proxy that rewrites the host).
+    // Optional: when unset we trust the request's own host header.
+    TWILIO_WEBHOOK_PUBLIC_URL: z.string().url().optional(),
   })
   .superRefine((env, ctx) => {
-    if (env.AUTH_PROVIDER !== "clerk") return;
-    for (const key of [
-      "CLERK_SECRET_KEY",
-      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-      "CLERK_WEBHOOK_SECRET",
-    ] as const) {
-      if (!env[key]) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: `${key} is required when AUTH_PROVIDER=clerk`,
-        });
+    if (env.AUTH_PROVIDER === "clerk") {
+      for (const key of [
+        "CLERK_SECRET_KEY",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+        "CLERK_WEBHOOK_SECRET",
+      ] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when AUTH_PROVIDER=clerk`,
+          });
+        }
+      }
+    }
+
+    if (env.MESSAGING_PROVIDER === "twilio") {
+      for (const key of [
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_FROM_NUMBER",
+      ] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when MESSAGING_PROVIDER=twilio`,
+          });
+        }
       }
     }
   });
