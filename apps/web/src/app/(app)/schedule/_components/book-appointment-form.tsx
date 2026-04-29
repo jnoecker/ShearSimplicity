@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
   useTransition,
@@ -9,7 +10,10 @@ import {
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/form";
 import { instantAtMinutes } from "@/lib/salon-time";
-import { createAppointmentAction } from "../_actions";
+import {
+  createAppointmentAction,
+  searchClientsAction,
+} from "../_actions";
 import {
   BookCalendar,
   type BookCalendarAppointment,
@@ -84,6 +88,11 @@ export function BookAppointmentForm({
 
   const [clientId, setClientId] = useState<string>(initialClientId ?? "");
   const [clientQuery, setClientQuery] = useState("");
+  // The displayed roster is server-driven so salons with more than the API's
+  // 200-row cap can still find clients beyond the first page via search.
+  // `clients` (the prop) seeds the initial list before any query is typed.
+  const [clientResults, setClientResults] = useState<BookClient[]>(clients);
+  const [, startClientSearch] = useTransition();
   const [staffId, setStaffId] = useState<string>(initialStaffId ?? "");
   const [serviceIds, setServiceIds] = useState<Set<string>>(new Set());
   const [date, setDate] = useState<string>(initialDate);
@@ -94,18 +103,28 @@ export function BookAppointmentForm({
   const [internalNotes, setInternalNotes] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const filteredClients = useMemo(() => {
-    const q = clientQuery.trim().toLowerCase();
-    if (!q) return clients.slice(0, 50);
-    return clients
-      .filter(
-        (c) =>
-          c.displayName.toLowerCase().includes(q) ||
-          (c.phone ?? "").toLowerCase().includes(q) ||
-          (c.email ?? "").toLowerCase().includes(q),
-      )
-      .slice(0, 50);
-  }, [clientQuery, clients]);
+  // Debounce typing so we don't fire a server action on every keystroke.
+  // 220 ms is short enough to feel live and long enough to coalesce a
+  // full word's typing into one round-trip.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      startClientSearch(async () => {
+        const hits = await searchClientsAction(clientQuery);
+        setClientResults(hits);
+      });
+    }, 220);
+    return () => clearTimeout(handle);
+  }, [clientQuery]);
+
+  // The selected client may sit outside the current result page when a
+  // long-tail search trims the list — keep them visible at the top so the
+  // current selection is never silently dropped from the UI.
+  const displayClients = useMemo(() => {
+    if (!clientId) return clientResults;
+    if (clientResults.some((c) => c.id === clientId)) return clientResults;
+    const selected = clients.find((c) => c.id === clientId);
+    return selected ? [selected, ...clientResults] : clientResults;
+  }, [clientId, clientResults, clients]);
 
   const groupedServices = useMemo(() => groupByCategory(services), [services]);
 
@@ -168,7 +187,7 @@ export function BookAppointmentForm({
   return (
     <form className="ss-book-grid" onSubmit={onSubmit}>
       <div className="ss-book-main">
-        <Card title="Client" meta={clientId ? clientName(clients, clientId) : "Required"}>
+        <Card title="Client" meta={clientId ? clientName(displayClients, clientId) : "Required"}>
           <input
             type="search"
             className="ss-book-search"
@@ -177,12 +196,14 @@ export function BookAppointmentForm({
             onChange={(e) => setClientQuery(e.target.value)}
           />
           <div className="ss-book-client-list">
-            {filteredClients.length === 0 ? (
+            {displayClients.length === 0 ? (
               <p className="ss-empty" style={{ padding: 12 }}>
-                No clients match "{clientQuery}".
+                {clientQuery
+                  ? `No clients match "${clientQuery}".`
+                  : "No clients yet."}
               </p>
             ) : (
-              filteredClients.map((c) => (
+              displayClients.map((c) => (
                 <button
                   type="button"
                   key={c.id}
@@ -332,7 +353,7 @@ export function BookAppointmentForm({
       <aside className="ss-book-aside">
         <Card title="Summary" meta="Review">
           <SummaryRow label="Client">
-            {clientId ? clientName(clients, clientId) : "—"}
+            {clientId ? clientName(displayClients, clientId) : "—"}
           </SummaryRow>
           <SummaryRow label="Stylist">
             {staffId ? staffName(staff, staffId) : "—"}

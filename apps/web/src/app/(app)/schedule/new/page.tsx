@@ -16,6 +16,26 @@ interface SettingsResponse {
 }
 
 const VIEW_MONTH = /^\d{4}-\d{2}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// `?date=` from a hand-crafted URL flows straight into the form's selected
+// state and then into instantAtMinutes() at submit time — a malformed value
+// would throw there and abort the flow. Validate up front and quietly fall
+// back to today.
+function safeIsoDate(input: string | undefined, fallback: string): string {
+  if (!input || !ISO_DATE.test(input)) return fallback;
+  const [y, m, d] = input.split("-").map(Number);
+  if (!y || !m || !d) return fallback;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== m - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return fallback;
+  }
+  return input;
+}
 
 export default async function NewBookingPage({
   searchParams,
@@ -31,7 +51,7 @@ export default async function NewBookingPage({
   const settings = await apiFetch<SettingsResponse>("/settings");
   const tz = settings.timezone;
   const todayIso = todayIsoInTimezone(tz);
-  const initialDate = params.date ?? todayIso;
+  const initialDate = safeIsoDate(params.date, todayIso);
 
   // Default the month view to whichever month the selected date sits in.
   // If the caller passes ?month explicitly, it wins so the calendar can

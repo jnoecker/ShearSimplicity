@@ -20,6 +20,29 @@ function fail(e: unknown): ActionResult {
   return { ok: false, message: "Request failed" };
 }
 
+interface ClientSearchHit {
+  id: string;
+  displayName: string;
+  phone: string | null;
+  email: string | null;
+}
+
+// Server-side client search so the booking flow stays correct beyond the API
+// list cap (take: 200 on /clients). The same `q` parameter the GET /clients
+// endpoint already supports does the heavy lifting; we just forward it.
+export async function searchClientsAction(
+  q: string,
+): Promise<ClientSearchHit[]> {
+  const trimmed = q.trim();
+  try {
+    return await apiFetch<ClientSearchHit[]>("/clients", {
+      query: { q: trimmed.length > 0 ? trimmed : undefined },
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function createAppointmentAction(input: {
   clientId: string;
   staffMemberId: string;
