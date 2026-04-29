@@ -1,4 +1,28 @@
+import Link from "next/link";
 import { TopbarOrgSwitcher, TopbarUserButton } from "./topbar-clerk";
+
+const SEARCH_ICON =
+  "M21 21l-4.35-4.35M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z";
+const BELL_ICON =
+  "M18 16v-5a6 6 0 1 0-12 0v5l-2 3h16l-2-3ZM10 21a2 2 0 0 0 4 0";
+const PLUS_ICON = "M12 5v14M5 12h14";
+
+function StrokedIcon({ d, size = 17 }: { d: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={d} />
+    </svg>
+  );
+}
 
 export function Topbar({
   mode,
@@ -11,35 +35,53 @@ export function Topbar({
   salonSlug: string | null;
   userEmail: string;
 }) {
+  const orgInitial = (salonName ?? "S").trim().charAt(0).toUpperCase();
+  void userEmail;
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/80 px-6 backdrop-blur">
-      <div className="flex items-center gap-3">
-        {mode === "clerk" ? (
-          <TopbarOrgSwitcher />
-        ) : (
-          <span className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 shadow-sm">
-            {salonName ?? "—"}
-            {salonSlug ? (
-              <span className="text-zinc-400">({salonSlug})</span>
-            ) : null}
-          </span>
-        )}
+    <div className="ss-topbar">
+      {mode === "clerk" ? (
+        <TopbarOrgSwitcher />
+      ) : (
+        <div className="ss-org-pill">
+          <div className="ss-org-mark">{orgInitial}</div>
+          <span>{salonName ?? "—"}</span>
+          {salonSlug ? <span className="ss-org-tag">· {salonSlug}</span> : null}
+        </div>
+      )}
+
+      <div className="ss-search">
+        <StrokedIcon d={SEARCH_ICON} size={15} />
+        <input placeholder="Find a client, appointment, or service…" />
       </div>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-zinc-500">{userEmail}</span>
-        {mode === "clerk" ? (
-          <TopbarUserButton />
-        ) : (
-          <form action="/api/dev-sign-out" method="post">
-            <button
-              type="submit"
-              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Sign out
-            </button>
-          </form>
-        )}
-      </div>
-    </header>
+
+      <div className="ss-topbar-spacer" />
+
+      <button className="ss-icon-btn" aria-label="Notifications" type="button">
+        <StrokedIcon d={BELL_ICON} />
+        <span className="ss-dot" />
+      </button>
+
+      <Link
+        href="/schedule?new=1"
+        className="ss-icon-btn"
+        aria-label="New appointment"
+      >
+        <StrokedIcon d={PLUS_ICON} />
+      </Link>
+
+      {mode === "clerk" ? (
+        <TopbarUserButton />
+      ) : (
+        <form action="/api/dev-sign-out" method="post">
+          <button
+            type="submit"
+            className="ss-btn ss-btn-ghost"
+            style={{ marginLeft: 8 }}
+          >
+            Sign out
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
