@@ -15,14 +15,17 @@ const schema = z
     DEV_SALON_SLUG: z.string().min(1),
 
     CLERK_SECRET_KEY: z.string().optional(),
-    CLERK_PUBLISHABLE_KEY: z.string().optional(),
+    // Clerk issues a single publishable key per app. The web side reads it
+    // from `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (the prefix is required for
+    // Next.js to expose it to the browser); the API reads the same value.
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
     CLERK_WEBHOOK_SECRET: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_PROVIDER !== "clerk") return;
     for (const key of [
       "CLERK_SECRET_KEY",
-      "CLERK_PUBLISHABLE_KEY",
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
       "CLERK_WEBHOOK_SECRET",
     ] as const) {
       if (!env[key]) {

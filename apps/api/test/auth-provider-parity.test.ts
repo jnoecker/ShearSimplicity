@@ -84,7 +84,7 @@ describe("AuthProvider parity", () => {
     // constructor branch that initialises the Clerk client.
     process.env.AUTH_PROVIDER = "clerk";
     process.env.CLERK_SECRET_KEY = "sk_test_fake";
-    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_fake";
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_fake";
     process.env.CLERK_WEBHOOK_SECRET = "whsec_fake";
 
     const { createClerkClient } = await import("@clerk/backend");
@@ -159,7 +159,7 @@ describe("AuthProvider parity", () => {
   it("ClerkAuthProvider returns null when the request is not signed in", async () => {
     process.env.AUTH_PROVIDER = "clerk";
     process.env.CLERK_SECRET_KEY = "sk_test_fake";
-    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_fake";
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_fake";
     process.env.CLERK_WEBHOOK_SECRET = "whsec_fake";
 
     const { createClerkClient } = await import("@clerk/backend");

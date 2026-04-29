@@ -35,7 +35,7 @@ export class ClerkAuthProvider implements AuthProvider {
       env.AUTH_PROVIDER === "clerk" && env.CLERK_SECRET_KEY
         ? createClerkClient({
             secretKey: env.CLERK_SECRET_KEY,
-            publishableKey: env.CLERK_PUBLISHABLE_KEY,
+            publishableKey: env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
           })
         : null;
   }
