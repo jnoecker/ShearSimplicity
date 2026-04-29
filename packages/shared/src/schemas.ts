@@ -355,3 +355,17 @@ export const salonSettingsUpdateSchema = z
 export type SalonSettingsUpdateInput = z.infer<
   typeof salonSettingsUpdateSchema
 >;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payments (Phase 5a — Stripe Checkout via PaymentProvider).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const checkoutCreateSchema = z.object({
+  appointmentId: z.string().uuid(),
+  // Optional overrides for the Stripe-hosted-checkout return URLs. When
+  // unset, the API generates routes on WEB_ORIGIN that the frontend
+  // handles. Validated as URLs to avoid passing junk to Stripe.
+  successUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+});
+export type CheckoutCreateInput = z.infer<typeof checkoutCreateSchema>;
