@@ -151,7 +151,7 @@ export class SmsHandlersService {
       });
       messageRowId = created.id;
     } catch (err) {
-      if (isUniqueConstraintError(err, "messages_outboxEventId_key")) {
+      if (isOutboxEventDedupConflict(err)) {
         const existing = await this.prisma.message.findUnique({
           where: { outboxEventId: event.id },
         });
@@ -194,14 +194,24 @@ export class SmsHandlersService {
       throw sendErr;
     }
 
+    // Pass the provider's status through verbatim — Twilio's create-time
+    // response is often still QUEUED/accepted, and the carrier-side terminal
+    // state (DELIVERED / FAILED) only arrives later via a status callback.
+    // Forcing SENT here would lie about delivery progress.
+    const messageStatus: MessageStatus =
+      result.status === "FAILED"
+        ? MessageStatus.FAILED
+        : result.status === "DELIVERED"
+          ? MessageStatus.DELIVERED
+          : result.status === "SENT"
+            ? MessageStatus.SENT
+            : MessageStatus.QUEUED;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.message.update({
         where: { id: messageRowId },
         data: {
-          status:
-            result.status === "FAILED"
-              ? MessageStatus.FAILED
-              : MessageStatus.SENT,
+          status: messageStatus,
           providerMessageId: result.providerMessageId,
           sentAt: new Date(),
         },
@@ -225,13 +235,22 @@ export class SmsHandlersService {
   }
 }
 
-function isUniqueConstraintError(err: unknown, target: string): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-    const meta = err.meta as { target?: string | string[] } | undefined;
-    if (!meta?.target) return false;
-    return Array.isArray(meta.target)
-      ? meta.target.includes(target)
-      : meta.target === target;
+// Prisma reports P2002's target inconsistently across drivers/versions: it
+// can be the literal index name ("messages_outboxEventId_key") or the field
+// list (["outboxEventId"]) or a single field name ("outboxEventId").
+// Match all three so a real conflict can't slip through and rethrow into
+// dead-letter.
+function isOutboxEventDedupConflict(err: unknown): boolean {
+  if (
+    !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+    err.code !== "P2002"
+  ) {
+    return false;
   }
-  return false;
+  const target = (err.meta as { target?: string | string[] } | undefined)
+    ?.target;
+  if (!target) return false;
+  const matches = (s: string) =>
+    s === "messages_outboxEventId_key" || s === "outboxEventId";
+  return Array.isArray(target) ? target.some(matches) : matches(target);
 }

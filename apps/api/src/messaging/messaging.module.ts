@@ -6,6 +6,11 @@ import { DevMessagingProvider } from "./dev-messaging.provider";
 import { TwilioMessagingProvider } from "./twilio-messaging.provider";
 import { SmsHandlersService } from "./sms-handlers.service";
 
+// Only the selected provider is constructed. Listing both classes in
+// `providers` would have Nest eagerly instantiate them on bootstrap, and
+// TwilioMessagingProvider's constructor throws when its env vars are absent
+// — which would crash startup in any dev/test env that left the Twilio
+// creds unset.
 const messagingProviderFactory: Provider = {
   provide: MESSAGING_PROVIDER,
   useFactory: () => {
@@ -24,12 +29,7 @@ const messagingProviderFactory: Provider = {
 @Global()
 @Module({
   imports: [PrismaModule],
-  providers: [
-    messagingProviderFactory,
-    DevMessagingProvider,
-    TwilioMessagingProvider,
-    SmsHandlersService,
-  ],
+  providers: [messagingProviderFactory, SmsHandlersService],
   exports: [MESSAGING_PROVIDER, SmsHandlersService],
 })
 export class MessagingModule {}

@@ -136,7 +136,7 @@ describe("SmsHandlersService.handleAppointmentCreated", () => {
     );
   });
 
-  it("does not double-send when retried after a successful send (outboxEventId dedup)", async () => {
+  it("does not double-send when retried after a successful send (outboxEventId dedup, constraint-name target)", async () => {
     const dupErr = new Prisma.PrismaClientKnownRequestError(
       "duplicate",
       { code: "P2002", clientVersion: "x", meta: { target: "messages_outboxEventId_key" } },
@@ -157,6 +157,47 @@ describe("SmsHandlersService.handleAppointmentCreated", () => {
     expect(messageFindUnique).toHaveBeenCalledTimes(1);
     expect(sendSms).not.toHaveBeenCalled();
     expect(domainEventCreate).not.toHaveBeenCalled();
+  });
+
+  it("dedupes when Prisma reports the target as a field-name array", async () => {
+    // Some Prisma versions / drivers report P2002.meta.target as the field
+    // list (`["outboxEventId"]`) instead of the constraint name. Both have
+    // to short-circuit or we'll dead-letter a perfectly idempotent retry.
+    const dupErr = new Prisma.PrismaClientKnownRequestError(
+      "duplicate",
+      { code: "P2002", clientVersion: "x", meta: { target: ["outboxEventId"] } },
+    );
+    const { handler, sendSms, messageFindUnique } = buildHandler({
+      appointment: fakeAppointment(),
+      insertThrows: dupErr,
+      existingMessage: {
+        id: "existing-id",
+        providerMessageId: "SM_already_sent",
+      },
+    });
+
+    await handler.handleAppointmentCreated(event);
+
+    expect(messageFindUnique).toHaveBeenCalledTimes(1);
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it("preserves the provider's QUEUED status instead of forcing SENT", async () => {
+    const { handler, sendSms, messageUpdate } = buildHandler({
+      appointment: fakeAppointment(),
+    });
+    sendSms.mockResolvedValueOnce({
+      providerMessageId: "SM_queued",
+      status: "QUEUED" as const,
+    });
+
+    await handler.handleAppointmentCreated(event);
+
+    expect(messageUpdate).toHaveBeenCalledTimes(1);
+    expect(messageUpdate.mock.calls[0]![0].data).toMatchObject({
+      providerMessageId: "SM_queued",
+      status: MessageStatus.QUEUED,
+    });
   });
 
   it("re-sends when a previous attempt crashed mid-flight (no providerMessageId yet)", async () => {
