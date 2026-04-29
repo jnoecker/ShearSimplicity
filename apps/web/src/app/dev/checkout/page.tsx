@@ -21,6 +21,8 @@ export default async function DevCheckoutPage({
   searchParams: Promise<{
     sid?: string;
     amount?: string;
+    subtotal?: string;
+    tip?: string;
     currency?: string;
     product?: string;
     success?: string;
@@ -33,6 +35,8 @@ export default async function DevCheckoutPage({
   const params = await searchParams;
   const sid = params.sid;
   const amountCents = Number(params.amount ?? 0);
+  const subtotalCents = Number(params.subtotal ?? params.amount ?? 0);
+  const tipCents = Number(params.tip ?? 0);
   const currency = (params.currency ?? "USD").toUpperCase();
   const product = params.product ?? "Appointment";
   const success = params.success ?? "";
@@ -42,10 +46,12 @@ export default async function DevCheckoutPage({
     notFound();
   }
 
-  const formattedAmount = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-  }).format(amountCents / 100);
+  const fmt = (cents: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).format(cents / 100);
+  const formattedAmount = fmt(amountCents);
 
   return (
     <main className="ss-dev-checkout">
@@ -53,6 +59,11 @@ export default async function DevCheckoutPage({
         <div className="ss-page-eyebrow">Dev payment simulator</div>
         <h1 className="ss-dev-checkout-title">{product}</h1>
         <div className="ss-dev-checkout-amount">{formattedAmount}</div>
+        {tipCents > 0 && (
+          <p className="ss-dev-checkout-meta">
+            Subtotal {fmt(subtotalCents)} · Tip {fmt(tipCents)}
+          </p>
+        )}
         <p className="ss-dev-checkout-meta">
           Session id <code>{sid}</code>
         </p>

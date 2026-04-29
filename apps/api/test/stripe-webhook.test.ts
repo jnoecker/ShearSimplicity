@@ -14,6 +14,7 @@ function buildService({
     status: PaymentStatus.PENDING,
     appointmentId: APPOINTMENT_ID,
   },
+  refundLookupPayment,
   otherSucceededPayment = null,
   processedThrows = null,
 }: {
@@ -22,6 +23,17 @@ function buildService({
     salonId: string;
     status: PaymentStatus;
     appointmentId: string | null;
+  } | null;
+  /** Used by charge.refunded — the row matched by payment_intent id with
+   *  the extra fields (amountCents, tipCents, refundedCents) the handler
+   *  needs to compute fully-vs-partially-refunded. */
+  refundLookupPayment?: {
+    id: string;
+    salonId: string;
+    appointmentId: string | null;
+    amountCents: number;
+    tipCents: number;
+    refundedCents: number;
   } | null;
   /** Another row that has already SUCCEEDED for the same appointment —
    *  used to drive the duplicate-charge defence-in-depth path. */
@@ -36,10 +48,23 @@ function buildService({
   //   1. to find the Payment row matching the session.id
   //   2. to check whether ANOTHER SUCCEEDED row exists for the appointment
   // The second call is gated on `succeeded && payment.appointmentId`.
+  // For charge.refunded we use refundLookupPayment in the first call and
+  // ignore the second.
   const paymentFindFirst = vi
     .fn()
-    .mockResolvedValueOnce(payment)
-    .mockResolvedValue(otherSucceededPayment);
+    .mockImplementation(async (args: { where?: Record<string, unknown> }) => {
+      // The refund handler queries for { provider, providerPaymentId };
+      // the success handler queries the same the first time and then a
+      // different shape (NOT + status) for the dup-check.
+      if (args.where && "NOT" in args.where) {
+        return otherSucceededPayment;
+      }
+      // First call from either handler. Tri-state: explicit `null` →
+      // "no Payment matches" path (refund test); object → use that;
+      // undefined → fall back to the success-handler default.
+      if (refundLookupPayment !== undefined) return refundLookupPayment;
+      return payment;
+    });
   const paymentUpdate = vi.fn().mockResolvedValue({});
   const domainEventCreate = vi.fn().mockResolvedValue({});
 
@@ -209,16 +234,105 @@ describe("StripeWebhookService", () => {
     expect(paymentUpdate).not.toHaveBeenCalled();
   });
 
-  it("ignores unhandled event types (refunds, disputes — deferred to 5c)", async () => {
+  it("ignores unhandled event types (disputes — deferred)", async () => {
     const { service, paymentUpdate, domainEventCreate } = buildService();
 
     await service.process({
-      id: "evt_refund_1",
-      type: "charge.refunded",
-      data: { object: { id: "ch_x" } },
+      id: "evt_dispute_1",
+      type: "charge.dispute.created",
+      data: { object: { id: "du_x" } },
     });
 
     expect(paymentUpdate).not.toHaveBeenCalled();
     expect(domainEventCreate).not.toHaveBeenCalled();
+  });
+
+  describe("charge.refunded", () => {
+    const refundEvent = (overrides: {
+      amount_refunded: number;
+      payment_intent?: string;
+    }) => ({
+      id: `evt_refund_${overrides.amount_refunded}`,
+      type: "charge.refunded",
+      data: {
+        object: {
+          id: "ch_test_001",
+          payment_intent: overrides.payment_intent ?? "pi_test_456",
+          amount: 12500,
+          amount_refunded: overrides.amount_refunded,
+        },
+      },
+    });
+
+    it("flips to REFUNDED when fully refunded and emits payment.refunded", async () => {
+      const { service, paymentUpdate, domainEventCreate } = buildService({
+        refundLookupPayment: {
+          id: "pay-1",
+          salonId: SALON_ID,
+          appointmentId: APPOINTMENT_ID,
+          amountCents: 11000,
+          tipCents: 1500,
+          refundedCents: 0,
+        },
+      });
+
+      await service.process(refundEvent({ amount_refunded: 12500 }));
+
+      expect(paymentUpdate.mock.calls[0]![0].data).toMatchObject({
+        status: PaymentStatus.REFUNDED,
+        refundedCents: 12500,
+      });
+      expect(domainEventCreate.mock.calls[0]![0].data.eventType).toBe(
+        "payment.refunded",
+      );
+    });
+
+    it("flips to PARTIALLY_REFUNDED when only some money came back", async () => {
+      const { service, paymentUpdate } = buildService({
+        refundLookupPayment: {
+          id: "pay-1",
+          salonId: SALON_ID,
+          appointmentId: APPOINTMENT_ID,
+          amountCents: 11000,
+          tipCents: 0,
+          refundedCents: 0,
+        },
+      });
+
+      await service.process(refundEvent({ amount_refunded: 5000 }));
+
+      expect(paymentUpdate.mock.calls[0]![0].data).toMatchObject({
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+        refundedCents: 5000,
+      });
+    });
+
+    it("no-ops when the refund total is already accounted for (race / re-delivery)", async () => {
+      const { service, paymentUpdate, domainEventCreate } = buildService({
+        refundLookupPayment: {
+          id: "pay-1",
+          salonId: SALON_ID,
+          appointmentId: APPOINTMENT_ID,
+          amountCents: 11000,
+          tipCents: 0,
+          refundedCents: 11000,
+        },
+      });
+
+      await service.process(refundEvent({ amount_refunded: 11000 }));
+
+      expect(paymentUpdate).not.toHaveBeenCalled();
+      expect(domainEventCreate).not.toHaveBeenCalled();
+    });
+
+    it("logs and skips when no Payment matches the payment_intent", async () => {
+      const { service, paymentUpdate } = buildService({
+        refundLookupPayment: null,
+      });
+
+      await service.process(refundEvent({ amount_refunded: 12500 }));
+
+      expect(paymentUpdate).not.toHaveBeenCalled();
+    });
   });
 });

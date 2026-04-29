@@ -801,6 +801,101 @@
   font-variant-numeric: tabular-nums;
 }
 .ss-detail-payment .ss-btn { align-self: flex-start; }
+.ss-detail-payment-meta {
+  font-size: 11.5px;
+  color: var(--ss-text-muted);
+  margin: 0;
+}
+
+/* Tip picker that expands inline before checkout. */
+.ss-tip-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--ss-panel-edge);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+.theme-twilight .ss-tip-picker { background: rgba(255, 255, 255, 0.04); }
+.ss-tip-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ss-tip-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ss-panel-edge);
+  background: rgba(255, 255, 255, 0.7);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ss-text-heading);
+  cursor: pointer;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.theme-twilight .ss-tip-chip { background: rgba(255, 255, 255, 0.06); }
+.ss-tip-chip:hover { border-color: var(--ss-magenta); }
+.ss-tip-chip.is-on {
+  background: linear-gradient(180deg, rgba(30, 195, 217, 0.18), rgba(30, 195, 217, 0.06));
+  border-color: var(--ss-magenta);
+  box-shadow: 0 0 0 2px rgba(30, 195, 217, 0.18);
+}
+.ss-tip-chip-label { line-height: 1.1; }
+.ss-tip-chip-amount {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ss-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ss-tip-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--ss-panel-edge);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ss-text-heading);
+}
+.theme-twilight .ss-tip-custom { background: rgba(255, 255, 255, 0.06); }
+.ss-tip-custom input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  padding: 0;
+}
+.ss-tip-summary {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--ss-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ss-tip-summary.is-total {
+  border-top: 1px solid var(--ss-panel-edge);
+  padding-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ss-text-heading);
+}
+.ss-tip-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
 
 /* Payment status pills — colour-coded by health, not by tone. */
 .ss-tag.is-pay-succeeded {

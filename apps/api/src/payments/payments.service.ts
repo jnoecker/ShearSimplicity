@@ -22,10 +22,18 @@ import {
 
 export interface CreateCheckoutInput {
   appointmentId: string;
+  /** Optional gratuity in cents — added as a separate line item on the
+   *  Stripe-hosted page and persisted as Payment.tipCents. */
+  tipCents?: number;
   /** Optional override of the post-payment redirect; falls back to a route on
    *  WEB_ORIGIN that the frontend handles. Stripe requires both URLs. */
   successUrl?: string;
   cancelUrl?: string;
+}
+
+export interface RefundInput {
+  /** Optional partial-refund amount in cents. Omit for a full refund. */
+  amountCents?: number;
 }
 
 const APPOINTMENT_INCLUDE = {
@@ -71,6 +79,8 @@ export class PaymentsService {
         appointmentId: true,
         status: true,
         amountCents: true,
+        tipCents: true,
+        refundedCents: true,
         currency: true,
         receiptUrl: true,
         capturedAt: true,
@@ -124,10 +134,11 @@ export class PaymentsService {
       });
     }
 
-    const amountCents = appointment.services.reduce(
+    const subtotalCents = appointment.services.reduce(
       (acc, s) => acc + s.priceSnapshotCents,
       0,
     );
+    const tipCents = input.tipCents ?? 0;
     const currency = appointment.services[0]?.currencySnapshot ?? "USD";
     const productName = formatProductName(
       appointment.services.map((s) => s.serviceNameSnapshot),
@@ -149,7 +160,8 @@ export class PaymentsService {
 
     const session = await this.provider.createCheckoutSession({
       idempotencyKey: paymentId,
-      amountCents,
+      amountCents: subtotalCents,
+      tipCents,
       currency,
       successUrl,
       cancelUrl,
@@ -172,7 +184,11 @@ export class PaymentsService {
           status: PaymentStatus.PENDING,
           provider: PaymentProviderEnum.STRIPE,
           providerPaymentId: session.providerSessionId,
-          amountCents,
+          // amountCents is the subtotal (services-only). tipCents is the
+          // breakdown; the total charged is amountCents + tipCents and is
+          // computed at read time wherever the UI needs it.
+          amountCents: subtotalCents,
+          tipCents,
           currency,
           idempotencyKey: paymentId,
         },
@@ -185,7 +201,8 @@ export class PaymentsService {
           eventType: EventType.PAYMENT_CREATED,
           payload: {
             appointmentId: appointment.id,
-            amountCents,
+            amountCents: subtotalCents,
+            tipCents,
             currency,
             providerSessionId: session.providerSessionId,
           } satisfies Prisma.InputJsonValue,
@@ -195,6 +212,111 @@ export class PaymentsService {
       });
       return { url: session.url, paymentId };
     });
+  }
+
+  /**
+   * Issues a refund against a successful Payment. The webhook
+   * (`charge.refunded`) is the source of truth for refund accounting,
+   * but we update the row inline here too so the UI flips immediately
+   * — the webhook's idempotent finalize won't re-process if the values
+   * already match.
+   *
+   * 5c MVP supports only full refunds — passing `amountCents` smaller
+   * than the captured total goes to Stripe but the inline update stays
+   * conservative (status flips to PARTIALLY_REFUNDED). Partial-refund UI
+   * lives in a follow-up issue.
+   */
+  async refund(
+    salonId: string,
+    actorUserId: string,
+    paymentId: string,
+    input: RefundInput,
+  ): Promise<{ providerRefundId: string; refundedCents: number }> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, salonId },
+      select: {
+        id: true,
+        salonId: true,
+        appointmentId: true,
+        status: true,
+        provider: true,
+        providerPaymentId: true,
+        amountCents: true,
+        tipCents: true,
+        refundedCents: true,
+      },
+    });
+    if (!payment) throw new NotFoundException("Payment not found");
+    if (payment.status !== PaymentStatus.SUCCEEDED) {
+      throw new ConflictException({
+        message: `Cannot refund a payment in status ${payment.status}`,
+        paymentId,
+      });
+    }
+    if (!payment.providerPaymentId) {
+      // Shouldn't happen in 5a's flow — every SUCCEEDED row has a
+      // payment_intent id by the time the webhook flips it. Guard anyway
+      // so a pre-finalised state can't crash the refund call.
+      throw new ConflictException(
+        "Payment has no provider id yet; webhook hasn't finalised",
+      );
+    }
+
+    const totalCharged = payment.amountCents + payment.tipCents;
+    const requested = input.amountCents ?? totalCharged - payment.refundedCents;
+    if (requested <= 0) {
+      throw new BadRequestException("Nothing left to refund");
+    }
+    if (requested > totalCharged - payment.refundedCents) {
+      throw new BadRequestException(
+        `Refund (${requested}) exceeds remaining balance (${totalCharged - payment.refundedCents})`,
+      );
+    }
+
+    const result = await this.provider.refundPayment({
+      providerPaymentId: payment.providerPaymentId,
+      amountCents: requested,
+      // Scope idempotency to the refund attempt — Stripe will return the
+      // same refund object on retry rather than issuing a second one.
+      idempotencyKey: `${payment.id}:refund:${randomUUID()}`,
+    });
+
+    const newRefundedCents = payment.refundedCents + result.amountCents;
+    const fullyRefunded = newRefundedCents >= totalCharged;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: fullyRefunded
+            ? PaymentStatus.REFUNDED
+            : PaymentStatus.PARTIALLY_REFUNDED,
+          refundedCents: newRefundedCents,
+        },
+      });
+      await tx.domainEvent.create({
+        data: {
+          salonId,
+          aggregateType: "PAYMENT",
+          aggregateId: payment.id,
+          eventType: EventType.PAYMENT_REFUNDED,
+          payload: {
+            appointmentId: payment.appointmentId,
+            providerRefundId: result.providerRefundId,
+            amountCents: result.amountCents,
+            refundedCentsTotal: newRefundedCents,
+            fullyRefunded,
+          } satisfies Prisma.InputJsonValue,
+          actorType: actorUserId ? ActorType.USER : ActorType.SYSTEM,
+          actorId: actorUserId ?? null,
+        },
+      });
+    });
+
+    return {
+      providerRefundId: result.providerRefundId,
+      refundedCents: newRefundedCents,
+    };
   }
 }
 

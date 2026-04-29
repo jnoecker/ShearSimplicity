@@ -362,6 +362,10 @@ export type SalonSettingsUpdateInput = z.infer<
 
 export const checkoutCreateSchema = z.object({
   appointmentId: z.string().uuid(),
+  // Optional gratuity, in cents. Capped at $1000 so a typo or malicious
+  // client can't blow up the customer's card; tips above this go through
+  // a separate adjustment flow.
+  tipCents: z.number().int().nonnegative().max(100_000).optional(),
   // Optional overrides for the Stripe-hosted-checkout return URLs. When
   // unset, the API generates routes on WEB_ORIGIN that the frontend
   // handles. Validated as URLs to avoid passing junk to Stripe.
@@ -369,3 +373,11 @@ export const checkoutCreateSchema = z.object({
   cancelUrl: z.string().url().optional(),
 });
 export type CheckoutCreateInput = z.infer<typeof checkoutCreateSchema>;
+
+export const refundCreateSchema = z.object({
+  // Omit for full refund. Capped to a generous appointment ceiling
+  // ($10,000) so the validation can catch obvious typos before they hit
+  // Stripe. Partial-refund UI lands later — schema is forward-compatible.
+  amountCents: z.number().int().positive().max(1_000_000).optional(),
+});
+export type RefundCreateInput = z.infer<typeof refundCreateSchema>;

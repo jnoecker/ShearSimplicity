@@ -12,6 +12,7 @@ import {
 import {
   cancelAppointment,
   completeAppointment,
+  refundPaymentAction,
   rescheduleAppointment,
   startCheckoutAction,
   transitionAppointment,
@@ -53,6 +54,8 @@ export interface ScheduleService {
 export interface ScheduleAppointmentService {
   serviceId: string;
   serviceNameSnapshot: string;
+  priceSnapshotCents: number;
+  currencySnapshot: string;
 }
 
 export interface ScheduleAppointment {
@@ -86,7 +89,13 @@ export interface SchedulePayment {
   id: string;
   appointmentId: string;
   status: SchedulePaymentStatus;
+  /** Subtotal in cents (services only). */
   amountCents: number;
+  /** Gratuity in cents. The total charged is amountCents + tipCents. */
+  tipCents: number;
+  /** Refunded so far. 0 when status is anything other than REFUNDED /
+   *  PARTIALLY_REFUNDED. */
+  refundedCents: number;
   currency: string;
   receiptUrl: string | null;
   capturedAt: string | null;
@@ -702,10 +711,7 @@ function DetailsPanel({
           <p>{appointment.internalNotes}</p>
         </div>
       )}
-      <PaymentSection
-        appointmentId={appointment.id}
-        payment={payment}
-      />
+      <PaymentSection appointment={appointment} payment={payment} />
       <div className="ss-detail-actions">
         {advanceTarget.map((t) => (
           <button
@@ -757,50 +763,109 @@ function DetailsPanel({
   );
 }
 
+// Tip presets shown when the user expands the "Pay now" UI. Custom is the
+// escape hatch — anything from $0 up to the API's $1000 cap.
+const TIP_PRESETS = [
+  { label: "No tip", percent: 0 },
+  { label: "15%", percent: 15 },
+  { label: "18%", percent: 18 },
+  { label: "20%", percent: 20 },
+  { label: "25%", percent: 25 },
+] as const;
+
 function PaymentSection({
-  appointmentId,
+  appointment,
   payment,
 }: {
-  appointmentId: string;
+  appointment: ScheduleAppointment;
   payment: SchedulePayment | null;
 }) {
-  // The startCheckoutAction server action redirects via redirect() — it
-  // throws NEXT_REDIRECT on success, so this state only flips back when
-  // the API rejects (already paid → 409, missing services → 400).
+  const subtotalCents = useMemo(
+    () =>
+      appointment.services.reduce((acc, s) => acc + s.priceSnapshotCents, 0),
+    [appointment.services],
+  );
+  const currency =
+    payment?.currency ??
+    appointment.services[0]?.currencySnapshot ??
+    "USD";
+
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // null when the tip picker is collapsed; a number (0 = "no tip") when
+  // the user has expanded it but not yet confirmed. Keeps "Pay now" as a
+  // single tap when the tip step is visible vs. surfacing it inline.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [tipPresetIndex, setTipPresetIndex] = useState<number>(2); // default 18%
+  const [customTipDollars, setCustomTipDollars] = useState<string>("");
+  const [customMode, setCustomMode] = useState(false);
 
-  async function pay() {
+  const tipCents = customMode
+    ? Math.max(0, Math.round(Number(customTipDollars || "0") * 100))
+    : Math.round(
+        (subtotalCents * (TIP_PRESETS[tipPresetIndex]?.percent ?? 0)) / 100,
+      );
+  const totalCents = subtotalCents + tipCents;
+
+  const succeeded = payment?.status === "SUCCEEDED";
+  const refunded =
+    payment?.status === "REFUNDED" ||
+    payment?.status === "PARTIALLY_REFUNDED";
+  const failed = payment?.status === "FAILED" || payment?.status === "CANCELLED";
+  const pending = payment?.status === "PENDING";
+  const canRefund = succeeded && payment !== null;
+
+  async function confirmAndPay() {
     setSubmitting(true);
     setErrorMsg(null);
-    const result = await startCheckoutAction(appointmentId);
-    // If we got here, the redirect didn't fire — that means the action
-    // failed (the success path throws and never returns).
+    const result = await startCheckoutAction(appointment.id, tipCents);
+    // If we got here, the redirect didn't fire — failure path.
     setSubmitting(false);
     setErrorMsg(result.message ?? "Couldn't start checkout");
   }
 
-  const succeeded = payment?.status === "SUCCEEDED";
-  const failed =
-    payment?.status === "FAILED" ||
-    payment?.status === "CANCELLED" ||
-    payment?.status === "REFUNDED" ||
-    payment?.status === "PARTIALLY_REFUNDED";
-  const pending = payment?.status === "PENDING";
+  async function refund() {
+    if (!payment) return;
+    if (!window.confirm(`Refund ${formatPrice(payment.amountCents + payment.tipCents - payment.refundedCents, payment.currency)} to the customer? This can't be undone from here.`)) {
+      return;
+    }
+    setSubmitting(true);
+    setErrorMsg(null);
+    const result = await refundPaymentAction(payment.id);
+    setSubmitting(false);
+    if (!result.ok) {
+      setErrorMsg(result.message ?? "Refund failed");
+    }
+  }
 
   return (
     <div className="ss-detail-section ss-detail-payment">
       <div className="ss-detail-label">Payment</div>
+
       {payment && (
         <div className="ss-detail-payment-row">
           <span className={`ss-tag is-pay-${payment.status.toLowerCase()}`}>
             {payment.status.replace("_", " ").toLowerCase()}
           </span>
           <span className="ss-detail-payment-amount">
-            {formatPrice(payment.amountCents, payment.currency)}
+            {formatPrice(
+              payment.amountCents + payment.tipCents,
+              payment.currency,
+            )}
           </span>
         </div>
       )}
+      {payment && payment.tipCents > 0 && (
+        <div className="ss-detail-payment-meta">
+          Includes {formatPrice(payment.tipCents, payment.currency)} tip
+        </div>
+      )}
+      {payment && payment.refundedCents > 0 && (
+        <div className="ss-detail-payment-meta">
+          {formatPrice(payment.refundedCents, payment.currency)} refunded
+        </div>
+      )}
+
       {succeeded && payment?.receiptUrl && (
         <a
           className="ss-link"
@@ -811,22 +876,115 @@ function PaymentSection({
           View Stripe receipt ↗
         </a>
       )}
-      {!succeeded && (
+
+      {!succeeded && !refunded && !pickerOpen && (
         <button
           type="button"
           className="ss-btn ss-btn-primary"
           disabled={submitting}
-          onClick={pay}
+          onClick={() => setPickerOpen(true)}
         >
-          {submitting
-            ? "Starting checkout…"
-            : pending
-              ? "Resume payment"
-              : failed
-                ? "Try again"
-                : "Pay now"}
+          {pending ? "Resume payment" : failed ? "Try again" : "Pay now"}
         </button>
       )}
+
+      {!succeeded && !refunded && pickerOpen && (
+        <div className="ss-tip-picker">
+          <div className="ss-tip-presets">
+            {TIP_PRESETS.map((p, i) => (
+              <button
+                key={p.label}
+                type="button"
+                className={`ss-tip-chip${
+                  !customMode && tipPresetIndex === i ? " is-on" : ""
+                }`}
+                onClick={() => {
+                  setCustomMode(false);
+                  setTipPresetIndex(i);
+                }}
+              >
+                <span className="ss-tip-chip-label">{p.label}</span>
+                {p.percent > 0 && (
+                  <span className="ss-tip-chip-amount">
+                    {formatPrice(
+                      Math.round((subtotalCents * p.percent) / 100),
+                      currency,
+                    )}
+                  </span>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`ss-tip-chip${customMode ? " is-on" : ""}`}
+              onClick={() => setCustomMode(true)}
+            >
+              <span className="ss-tip-chip-label">Custom</span>
+            </button>
+          </div>
+          {customMode && (
+            <div className="ss-tip-custom">
+              <span>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                placeholder="0.00"
+                value={customTipDollars}
+                onChange={(e) => setCustomTipDollars(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="ss-tip-summary">
+            <span>Subtotal</span>
+            <span>{formatPrice(subtotalCents, currency)}</span>
+          </div>
+          {tipCents > 0 && (
+            <div className="ss-tip-summary">
+              <span>Tip</span>
+              <span>{formatPrice(tipCents, currency)}</span>
+            </div>
+          )}
+          <div className="ss-tip-summary is-total">
+            <span>Total</span>
+            <span>{formatPrice(totalCents, currency)}</span>
+          </div>
+          <div className="ss-tip-actions">
+            <button
+              type="button"
+              className="ss-btn ss-btn-ghost"
+              onClick={() => setPickerOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="ss-btn ss-btn-primary"
+              onClick={confirmAndPay}
+              disabled={submitting}
+            >
+              {submitting
+                ? "Starting checkout…"
+                : `Pay ${formatPrice(totalCents, currency)}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {canRefund && (
+        <button
+          type="button"
+          className="ss-btn ss-btn-ghost"
+          disabled={submitting}
+          onClick={refund}
+        >
+          {submitting ? "Refunding…" : "Issue refund"}
+        </button>
+      )}
+
       {errorMsg && <div className="ss-form-error">{errorMsg}</div>}
     </div>
   );
