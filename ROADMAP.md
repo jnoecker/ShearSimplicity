@@ -143,83 +143,79 @@ on `/schedule` (`?book=1` query state, so back/forward and shareable URLs work).
 
 **Risks:** time zones. Store everything UTC; render in salon's `timezone`. DST edge cases at the salon-hour boundary.
 
-## Phase 4 — Messaging (SMS) 🚧
+## Phase 4 — Messaging (SMS) ✅
 
-Outbound first, inbound second. Reminder jobs separate from confirmations.
+Outbound first, inbound second. Reminder jobs separate from confirmations. Shipped as four focused PRs.
 
-### Phase 4a — Messaging backend 🚧
+### Phase 4a — Messaging backend ✅
+
+PR: [#12](https://github.com/jnoecker/ShearSimplicity/pull/12)
 
 - `MessagingProvider` interface, switchable on `MESSAGING_PROVIDER` env
   (`dev` logs and returns a fake sid; `twilio` uses the official SDK)
-- Outbox worker now actually dispatches: `appointment.created` → confirmation SMS
+- Outbox worker dispatches `appointment.created` → confirmation SMS
 - Idempotent on `Message.outboxEventId` (new schema column) so retries don't double-send
 - Inbound webhook `POST /webhooks/twilio/sms` with HMAC signature validation,
-  deduped on `processed_webhook_events.(source, externalEventId)`, routes
-  inbound messages to the salon by sender phone (single-shared-number caveat — see 4b)
-- Message body templated per appointment in the salon's timezone, includes STOP instruction
-- Vitest coverage for the formatter + handler flow control (send / dedup / cancelled / no phone / send failure)
+  deduped on `processed_webhook_events.(source, externalEventId)`
+- Message body templated per appointment in the salon's timezone, GSM-7-safe,
+  includes STOP instruction
 
-**Out of scope (intentional):** reminder scheduling, reschedule/cancel SMS, message-history UI, per-salon Twilio numbers, deep-link tokens. Those land in 4b.
+### Phase 4b-1 — Reschedule + cancel notifications ✅
 
-### Phase 4b-1 — Reschedule + cancel notifications 🚧
+PR: [#13](https://github.com/jnoecker/ShearSimplicity/pull/13)
 
 - New outbox emissions in `appointments.service.ts` for reschedule + cancel
-  (alongside the existing domain events)
 - New handler methods on `SmsHandlersService` mirror `handleAppointmentCreated`,
-  share the INSERT-then-send dedup helper, render bodies with old → new for
-  reschedule and the cancelled time for cancel
+  share the INSERT-then-send dedup helper
 - Outbox worker dispatch routes the two new event types
-- Vitest coverage for fresh send, retry dedup, missing-payload skip,
-  status-already-cancelled-on-reschedule skip, no-phone skip
 
-### Phase 4b-2 — Reminder scheduling 🚧
+### Phase 4b-2 — Reminder scheduling ✅
+
+PR: [#15](https://github.com/jnoecker/ShearSimplicity/pull/15)
 
 - New event type `appointment.reminder_due`. Reuses `OutboxEvent.nextAttemptAt`
-  for deferred dispatch (the worker's existing poll already filters on it,
-  so no leasing/queue changes were needed).
+  for deferred dispatch — no BullMQ needed; the worker's existing poll already
+  filters on it.
 - `create()` schedules with `nextAttemptAt = startAt - 24h`. Same-day
-  bookings end up with a past `nextAttemptAt` and fire on the next tick,
-  which is the correct behaviour.
-- `reschedule()` does an `updateMany` to move the still-`PENDING` row
-  forward/back; rows that already fired don't match (status moved past
-  PENDING) and stay as-is — once a reminder went out for the old time, we
-  can't unsend it.
+  bookings end up with a past `nextAttemptAt` and fire on the next tick.
+- `reschedule()` updates the still-`PENDING` row's `nextAttemptAt`; rows
+  that already fired don't match and stay as-is — once a reminder went out
+  for the old time, we can't unsend it.
 - `cancel()` marks the still-`PENDING` row `COMPLETED` to suppress firing.
-- Handler skips on CANCELLED / NO_SHOW / COMPLETED status (belt + suspenders
-  for races) and on a startAt that's already past at fire time.
 
-### Phase 4b-3 — Per-salon Twilio numbers 🚧
+### Phase 4b-3 — Per-salon Twilio numbers ✅
+
+PR: [#17](https://github.com/jnoecker/ShearSimplicity/pull/17)
 
 - New nullable, unique `Salon.smsFromNumber` (E.164) + settings UI field
 - Outbound: handler reads `Salon.smsFromNumber` first, falls back to the
   env-level `TWILIO_FROM_NUMBER`, drops with a logged warning if neither
 - Inbound: webhook routes by `To` header (`Salon.findUnique` on `smsFromNumber`)
   with a sender-phone fallback that keeps single-tenant dev working
-- Shared zod validates E.164 format on PATCH; null clears the number
-
-### Backlog (was 4b, deferred to 4c or beyond)
-
-- Cancellation / reschedule deep links signed with short-lived tokens
-- Message history per client (UI)
-- BullMQ migration (only if we hit operational pain — outbox `nextAttemptAt`
-  is good enough for 4b-2)
-
-### A2P 10DLC compliance — separate workstream
-
-- Brand registration, campaign approval. Without it, US carriers will filter or block.
-- Terms / privacy policy live at `docs/sms-terms.md` and `docs/privacy-policy.md`.
+- P2002 on the unique index becomes a 409 with a field-scoped error
 
 **Risks:** Twilio webhook signature validation, replay protection. Long messages segmenting cost-of-delivery surprises.
 
+### Deferred from Phase 4 — tracked as issues
+
+- [#22](https://github.com/jnoecker/ShearSimplicity/issues/22) — Deep-link tokens for cancel/reschedule SMS
+- [#23](https://github.com/jnoecker/ShearSimplicity/issues/23) — Message history UI per client
+- [#24](https://github.com/jnoecker/ShearSimplicity/issues/24) — BullMQ migration of outbox worker (conditional)
+- [#21](https://github.com/jnoecker/ShearSimplicity/issues/21) — Per-salon configurable reminder lead time
+- [#25](https://github.com/jnoecker/ShearSimplicity/issues/25) — A2P 10DLC brand + campaign registration
+- [#26](https://github.com/jnoecker/ShearSimplicity/issues/26) — Replace SMS terms / privacy placeholder copy
+
 ## Phase 5 — Payments / POS (Stripe Checkout) ⬜
 
-PCI exposure stays minimal — Stripe-hosted surfaces only this phase.
+PCI exposure stays minimal — Stripe-hosted surfaces only this phase. Will likely slice into 5a / 5b / 5c the way Phase 4 did; sub-shape decided when 5 starts.
 
 - Stripe adapter behind a `PaymentProvider` interface
 - Create Checkout Session for an appointment; webhook updates `payments.status` (idempotent on Stripe event ID)
 - Tip capture, receipt URL, refund tracking
 - Appointment checkout state separate from appointment status (an appointment can be `COMPLETED` and `payments.status = PENDING`)
 - Webhook signature validation + idempotency on Stripe `event.id`
+
+**Single platform Stripe account for now.** Migration to Stripe Connect (per-salon merchant accounts, platform fee on each charge) tracked as [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — not on the critical path until a salon needs their own merchant account.
 
 **Out of scope (Phase 5.5):** Stripe Terminal, in-person card readers, product sales, inventory, taxes, gift cards/packages.
 
@@ -267,7 +263,9 @@ Twilio Voice + OpenAI Realtime. Same tools, narrower scope.
 
 ## Backlog (unscheduled)
 
-Things to remember but not commit to yet.
+Things to remember but not commit to yet. Deferred work *from* a phase
+lives as a GitHub issue (label: `deferred`); this section is for the
+greenfield product backlog that hasn't been touched at all.
 
 - Online booking widget (public-facing, no auth)
 - Multi-location salons (one Clerk org → multiple physical salons)
@@ -278,6 +276,20 @@ Things to remember but not commit to yet.
 - Mobile app (React Native or PWA)
 - Custom integrations (Google Calendar two-way sync)
 - Multi-currency / multi-locale
+
+### Tracked as issues
+
+Cross-phase deferrals — see the `deferred` label on the repo:
+
+- [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — Migrate to Stripe Connect for per-salon money movement
+- [#19](https://github.com/jnoecker/ShearSimplicity/issues/19) — Recurring appointments / cadence support
+- [#20](https://github.com/jnoecker/ShearSimplicity/issues/20) — Service ↔ stylist training matrix
+- [#21](https://github.com/jnoecker/ShearSimplicity/issues/21) — Per-salon configurable reminder lead time
+- [#22](https://github.com/jnoecker/ShearSimplicity/issues/22) — Deep-link tokens for cancel/reschedule SMS
+- [#23](https://github.com/jnoecker/ShearSimplicity/issues/23) — Message history UI per client
+- [#24](https://github.com/jnoecker/ShearSimplicity/issues/24) — Migrate outbox worker to BullMQ (conditional)
+- [#25](https://github.com/jnoecker/ShearSimplicity/issues/25) — A2P 10DLC brand + campaign registration (compliance)
+- [#26](https://github.com/jnoecker/ShearSimplicity/issues/26) — Replace SMS terms / privacy placeholder copy (compliance)
 
 ## Working agreements
 
