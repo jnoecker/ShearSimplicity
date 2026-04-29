@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Tailwind v4 CSS-first theme configuration */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --color-brand-50: oklch(0.97 0.02 280);
+  --color-brand-100: oklch(0.94 0.05 280);
+  --color-brand-500: oklch(0.62 0.18 280);
+  --color-brand-600: oklch(0.55 0.19 280);
+  --color-brand-700: oklch(0.48 0.18 280);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: oklch(0.18 0.01 280);
+  background: oklch(0.99 0.005 280);
+  -webkit-font-smoothing: antialiased;
+}
