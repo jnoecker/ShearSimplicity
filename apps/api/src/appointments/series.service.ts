@@ -401,6 +401,62 @@ export class AppointmentSeriesService {
     });
   }
 
+  // Flip a finite series to indefinite (stopAfterVisits = null) so it stops
+  // running out and the operator never has to remember to extend it again.
+  // The complement of extend(): both keep an at-risk-of-ending series alive,
+  // but converting drops the cap entirely so the rolling top-off keeps it
+  // running until the user cancels.
+  async convertToIndefinite(
+    salonId: string,
+    actorUserId: string,
+    seriesId: string,
+  ) {
+    const series = await this.get(salonId, seriesId);
+    if (series.status === AppointmentSeriesStatusEnum.CANCELLED) {
+      throw new ConflictException("Cannot convert a cancelled series");
+    }
+    if (series.stopAfterVisits === null) {
+      // Already indefinite. Treat as a no-op so the UI can call this
+      // optimistically without checking first.
+      return series;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.appointmentSeries.update({
+        where: { id: seriesId },
+        data: {
+          stopAfterVisits: null,
+          status: AppointmentSeriesStatusEnum.ACTIVE,
+        },
+        include: SERIES_INCLUDE,
+      });
+      // Make sure a top-off is queued — a series that hit COMPLETED before
+      // this call will have suppressed its top-off chain, and indefinite
+      // mode needs that chain back.
+      await tx.outboxEvent.create({
+        data: {
+          salonId,
+          eventType: EventType.APPOINTMENT_SERIES_TOP_OFF_DUE,
+          payload: { seriesId, salonId } as Prisma.InputJsonValue,
+          status: OutboxStatus.PENDING,
+          nextAttemptAt: new Date(),
+        },
+      });
+      await appendDomainEvent(tx, {
+        salonId,
+        aggregateType: "APPOINTMENT_SERIES",
+        aggregateId: seriesId,
+        eventType: EventType.APPOINTMENT_SERIES_EXTENDED,
+        payload: {
+          previousStopAfterVisits: series.stopAfterVisits,
+          newStopAfterVisits: null,
+        } as Prisma.InputJsonValue,
+        actorUserId,
+      });
+      return updated;
+    });
+  }
+
   // Extend a finite series by N more visits. Indefinite series have no cap
   // to extend — calling this is a 400. Bumps stopAfterVisits, flips
   // COMPLETED back to ACTIVE if relevant, and ensures a top-off is queued.

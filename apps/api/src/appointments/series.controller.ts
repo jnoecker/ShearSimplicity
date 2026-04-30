@@ -68,4 +68,15 @@ export class AppointmentSeriesController {
   ) {
     return this.series.extend(salon.salonId, user.userId, id, input);
   }
+
+  // No body — the action is unambiguous. Idempotent: if the series is
+  // already indefinite the service returns the current state.
+  @Post(":id/convert-to-indefinite")
+  convertToIndefinite(
+    @CurrentSalon() salon: ActiveSalon,
+    @CurrentUser() user: AuthIdentity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ) {
+    return this.series.convertToIndefinite(salon.salonId, user.userId, id);
+  }
 }
