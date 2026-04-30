@@ -221,6 +221,20 @@ export const clientUpdateSchema = z.object({
 export type ClientCreateInput = z.infer<typeof clientCreateSchema>;
 export type ClientUpdateInput = z.infer<typeof clientUpdateSchema>;
 
+// Cursor-paginated client message history. Cursor is opaque from the
+// caller's perspective — the server encodes (createdAt, id) so ties at
+// the same instant stay stable across pages.
+export const clientMessagesQuerySchema = z.object({
+  cursor: z.string().min(1).max(200).optional(),
+  limit: z
+    .preprocess(
+      (v) => (typeof v === "string" ? Number.parseInt(v, 10) : v),
+      z.number().int().min(1).max(100),
+    )
+    .optional(),
+});
+export type ClientMessagesQuery = z.infer<typeof clientMessagesQuerySchema>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Appointments (Phase 3a)
 // ─────────────────────────────────────────────────────────────────────────────
