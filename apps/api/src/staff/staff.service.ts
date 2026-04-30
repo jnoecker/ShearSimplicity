@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { EventType } from "@shearsimp/shared";
 import type {
   StaffCreateInput,
+  StaffServicesReplaceInput,
   StaffUpdateInput,
   WorkingHoursReplaceInput,
 } from "@shearsimp/shared";
@@ -34,10 +35,19 @@ export class StaffService {
             { startMinutesFromMidnight: "asc" },
           ],
         },
+        trainedServices: {
+          select: { serviceId: true },
+        },
       },
     });
     if (!staff) throw new NotFoundException("Staff member not found");
-    return staff;
+    // Flatten the junction rows into a plain id list — the UI doesn't need
+    // the row ids and the booking flow (20b) just wants the set membership.
+    const { trainedServices, ...rest } = staff;
+    return {
+      ...rest,
+      serviceIds: trainedServices.map((t) => t.serviceId),
+    };
   }
 
   async create(salonId: string, actorUserId: string, input: StaffCreateInput) {
@@ -110,6 +120,55 @@ export class StaffService {
     } catch (e) {
       throw mapKnownErrors(e, "Staff member");
     }
+  }
+
+  async replaceServices(
+    salonId: string,
+    actorUserId: string,
+    staffId: string,
+    input: StaffServicesReplaceInput,
+  ) {
+    await this.get(salonId, staffId);
+
+    // Validate every requested service belongs to this salon up front so a
+    // cross-tenant id surfaces as a 400 rather than a Prisma FK error.
+    if (input.serviceIds.length > 0) {
+      const found = await this.prisma.service.findMany({
+        where: { salonId, id: { in: input.serviceIds } },
+        select: { id: true },
+      });
+      if (found.length !== input.serviceIds.length) {
+        throw new NotFoundException("One or more services not found");
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.staffMemberService.deleteMany({
+        where: { salonId, staffMemberId: staffId },
+      });
+      if (input.serviceIds.length > 0) {
+        await tx.staffMemberService.createMany({
+          data: input.serviceIds.map((serviceId) => ({
+            salonId,
+            staffMemberId: staffId,
+            serviceId,
+          })),
+        });
+      }
+      await appendDomainEvent(tx, {
+        salonId,
+        aggregateType: "STAFF_MEMBER",
+        aggregateId: staffId,
+        eventType: EventType.STAFF_SERVICES_UPDATED,
+        payload: { serviceIds: input.serviceIds },
+        actorUserId,
+      });
+      const rows = await tx.staffMemberService.findMany({
+        where: { salonId, staffMemberId: staffId },
+        select: { serviceId: true },
+      });
+      return { serviceIds: rows.map((r) => r.serviceId) };
+    });
   }
 
   async replaceWorkingHours(

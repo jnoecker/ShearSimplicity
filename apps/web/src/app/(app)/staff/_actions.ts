@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   staffCreateSchema,
+  staffServicesReplaceSchema,
   staffUpdateSchema,
   workingHoursReplaceSchema,
 } from "@shearsimp/shared";
@@ -85,6 +86,37 @@ export async function updateStaffAction(
   revalidatePath("/staff");
   revalidatePath(`/staff/${id}`);
   return { message: "Saved." };
+}
+
+// Mirrors the working-hours pattern: form posts a JSON-encoded id list in a
+// single hidden input rather than fanning out FormData entries.
+export async function replaceStaffServicesAction(
+  id: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  let serviceIds: unknown;
+  try {
+    serviceIds = JSON.parse(String(formData.get("serviceIds") ?? "[]"));
+  } catch {
+    return { errors: { _: "Could not parse services" } };
+  }
+  const parsed = staffServicesReplaceSchema.safeParse({ serviceIds });
+  if (!parsed.success) return { errors: toFormErrors(parsed) };
+
+  try {
+    await apiFetch(`/staff/${id}/services`, {
+      method: "PUT",
+      data: parsed.data,
+    });
+  } catch (e) {
+    if (e instanceof ApiError) {
+      return { errors: e.fieldMessages() ?? {}, message: e.topMessage() };
+    }
+    throw e;
+  }
+  revalidatePath(`/staff/${id}`);
+  return { message: "Services saved." };
 }
 
 // Working-hours form posts a list of windows as JSON in a hidden input —
