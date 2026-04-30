@@ -130,14 +130,20 @@ export class StaffService {
   ) {
     await this.get(salonId, staffId);
 
+    // Treat the payload as a set: dedupe up front so a client retry/merge
+    // that produces "[a, a, b]" doesn't trip either the existence check
+    // (`id IN (...)` returns each row once) or the (staffMemberId,
+    // serviceId) unique constraint on insert.
+    const uniqueServiceIds = [...new Set(input.serviceIds)];
+
     // Validate every requested service belongs to this salon up front so a
     // cross-tenant id surfaces as a 400 rather than a Prisma FK error.
-    if (input.serviceIds.length > 0) {
+    if (uniqueServiceIds.length > 0) {
       const found = await this.prisma.service.findMany({
-        where: { salonId, id: { in: input.serviceIds } },
+        where: { salonId, id: { in: uniqueServiceIds } },
         select: { id: true },
       });
-      if (found.length !== input.serviceIds.length) {
+      if (found.length !== uniqueServiceIds.length) {
         throw new NotFoundException("One or more services not found");
       }
     }
@@ -146,9 +152,9 @@ export class StaffService {
       await tx.staffMemberService.deleteMany({
         where: { salonId, staffMemberId: staffId },
       });
-      if (input.serviceIds.length > 0) {
+      if (uniqueServiceIds.length > 0) {
         await tx.staffMemberService.createMany({
-          data: input.serviceIds.map((serviceId) => ({
+          data: uniqueServiceIds.map((serviceId) => ({
             salonId,
             staffMemberId: staffId,
             serviceId,
@@ -160,7 +166,7 @@ export class StaffService {
         aggregateType: "STAFF_MEMBER",
         aggregateId: staffId,
         eventType: EventType.STAFF_SERVICES_UPDATED,
-        payload: { serviceIds: input.serviceIds },
+        payload: { serviceIds: uniqueServiceIds },
         actorUserId,
       });
       const rows = await tx.staffMemberService.findMany({
