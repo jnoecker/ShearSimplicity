@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so a quick re-push doesn't queue.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Several scripts use `dotenv -e ../../.env --` to load env vars; in CI
+      # we synthesize a minimal .env so those wrappers don't fail. The values
+      # only need to satisfy the env schema — no real services are touched.
+      - name: Synthesize CI .env
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci?schema=public
+          AUTH_PROVIDER=dev
+          DEV_AUTH_SECRET=ci-secret-do-not-use
+          DEV_USER_ID=00000000-0000-0000-0000-000000000001
+          DEV_USER_EMAIL=ci@shearsimp.test
+          DEV_SALON_ID=00000000-0000-0000-0000-0000000000a1
+          DEV_SALON_SLUG=ci-salon
+          MESSAGING_PROVIDER=dev
+          PAYMENT_PROVIDER=dev
+          EOF
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build workspace packages
+        # Compiles @shearsimp/shared and @shearsimp/db so cross-package
+        # imports resolve during typecheck and test below.
+        run: pnpm --filter @shearsimp/shared --filter @shearsimp/db build
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test

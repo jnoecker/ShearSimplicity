@@ -1,0 +1,41 @@
+# Build output
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.cache
+**/coverage
+**/*.tsbuildinfo
+
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local env — never bake secrets into an image
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Docs / planning that don't need to be in the build context
+.planning
+docs
+README.md
+ROADMAP.md
+
+# CI / deploy metadata
+.github
+**/railway.json
+
+# Docker
+Dockerfile
+**/Dockerfile
+.dockerignore
+docker-compose.yml

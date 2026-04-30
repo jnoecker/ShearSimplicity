@@ -322,6 +322,41 @@ Twilio Voice + OpenAI Realtime. Same tools, narrower scope.
 
 ---
 
+## Phase 21 — Production deployment 🚧
+
+Stand up `app.shearscheduling.com` (real salon) on Railway. Demo deployment
+follows in a later sub-phase.
+
+### Phase 21a — Deploy config 🚧
+
+- Multi-stage Dockerfiles for `apps/api` (also serves the worker) and
+  `apps/web` (Next.js standalone output)
+- Per-service Railway configs at the repo root (`railway.api.json`,
+  `railway.worker.json`, `railway.web.json`)
+- `prisma migrate deploy` as the API service's `preDeployCommand` so schema
+  changes apply once per deploy, before the new container takes traffic
+- GitHub Actions CI on every PR: pnpm install → Prisma generate → schema
+  validate → typecheck → test
+- `docs/deployment.md` documents the Railway setup, env vars per service,
+  DNS/Cloudflare flow, and webhook URLs to wire once `api.shearscheduling.com`
+  resolves
+
+### Phase 21b — Real-salon prod environment ⬜
+
+- Cloudflare DNS for `shearscheduling.com`
+- Clerk production org, real LLC's Stripe live keys, Sentry projects
+- First Railway project deployed; smoke test booking → Stripe checkout
+- Webhook wiring (Clerk, Stripe, Twilio when A2P clears)
+
+### Phase 21c — Demo deployment ⬜
+
+- Second Railway project on `demo.shearscheduling.com`
+- `PAYMENT_PROVIDER=dev` so demo never touches live Stripe
+- Seed script for the demo salon (synthetic clients, services, appointments)
+- Nightly cron resets demo data
+
+---
+
 ## Backlog (unscheduled)
 
 Things to remember but not commit to yet. Deferred work *from* a phase
