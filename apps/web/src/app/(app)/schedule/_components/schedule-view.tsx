@@ -987,6 +987,22 @@ function PaymentSection({
   const [refundCustomMode, setRefundCustomMode] = useState(false);
   const [refundCustomDollars, setRefundCustomDollars] = useState<string>("");
 
+  // Always re-enter the picker on the documented default (100% remaining).
+  // Without this, a cancelled-then-reopened picker would silently reuse the
+  // operator's prior selection, making it easy to submit a stale partial.
+  function openRefundPicker() {
+    setRefundPreset("full");
+    setRefundCustomMode(false);
+    setRefundCustomDollars("");
+    setRefundPickerOpen(true);
+  }
+  function closeRefundPicker() {
+    setRefundPickerOpen(false);
+    setRefundPreset("full");
+    setRefundCustomMode(false);
+    setRefundCustomDollars("");
+  }
+
   const refundAmountCents = payment
     ? refundCustomMode
       ? Math.max(
@@ -1034,10 +1050,7 @@ function PaymentSection({
       setErrorMsg(result.message ?? "Refund failed");
       return;
     }
-    setRefundPickerOpen(false);
-    setRefundCustomMode(false);
-    setRefundCustomDollars("");
-    setRefundPreset("full");
+    closeRefundPicker();
   }
 
   return (
@@ -1182,7 +1195,7 @@ function PaymentSection({
           type="button"
           className="ss-btn ss-btn-ghost"
           disabled={submitting}
-          onClick={() => setRefundPickerOpen(true)}
+          onClick={openRefundPicker}
         >
           Issue refund
         </button>
@@ -1261,7 +1274,7 @@ function PaymentSection({
             <button
               type="button"
               className="ss-btn ss-btn-ghost"
-              onClick={() => setRefundPickerOpen(false)}
+              onClick={closeRefundPicker}
               disabled={submitting}
             >
               Cancel
