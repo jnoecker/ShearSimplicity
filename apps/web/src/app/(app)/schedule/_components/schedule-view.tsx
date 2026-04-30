@@ -327,10 +327,13 @@ export function ScheduleView({
 
     // Series occurrence: ask which scope before firing. Resolving the
     // prompt calls runReschedule() with the chosen scope. Non-series
-    // appointments skip the prompt entirely.
+    // appointments skip the prompt entirely. Both ACTIVE and COMPLETED
+    // series can still have future occurrences worth cascading — only
+    // CANCELLED skips the prompt (its future occurrences were already
+    // cancelled when the series ended).
     if (
       block.appointment.seriesId &&
-      block.appointment.series?.status === "ACTIVE"
+      block.appointment.series?.status !== "CANCELLED"
     ) {
       setPendingReschedule({
         appointmentId,
@@ -561,7 +564,12 @@ export function ScheduleView({
             setCancelTarget({
               id: selected.id,
               clientName: selected.client.displayName,
-              isSeries: !!selected.seriesId && selected.series?.status === "ACTIVE",
+              // ACTIVE *and* COMPLETED series can still have future
+              // occurrences (a finite series flips to COMPLETED as soon as
+              // the cap is materialized). Only CANCELLED has nothing left
+              // to cascade.
+              isSeries:
+                !!selected.seriesId && selected.series?.status !== "CANCELLED",
             })
           }
         />
@@ -1223,14 +1231,17 @@ function cadenceLabel(everyNWeeks: number): string {
   return `${everyNWeeks} weeks`;
 }
 
-// Show the ending-soon banner on the last 1-2 occurrences of a finite,
-// active series. Not on already-cancelled / already-completed series — at
-// that point the operator can't extend without recreating.
+// Show the ending-soon banner on the last 1-2 occurrences of a finite
+// series. Includes COMPLETED — a finite series flips to COMPLETED as soon
+// as its cap is fully materialized, but the occurrences themselves are
+// still in the future and the banner is the only in-UI recovery path
+// (extend / convert to indefinite). Only CANCELLED is excluded; once a
+// series is cancelled there's nothing to extend.
 function shouldShowEndingBanner(
   series: ScheduleSeriesSummary,
   seriesIndex: number,
 ): boolean {
-  if (series.status !== "ACTIVE") return false;
+  if (series.status === "CANCELLED") return false;
   if (series.stopAfterVisits === null) return false;
   return seriesIndex >= series.stopAfterVisits - 1;
 }
