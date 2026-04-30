@@ -124,6 +124,7 @@ export const EventType = {
 
   STAFF_CREATED: "staff.created",
   STAFF_UPDATED: "staff.updated",
+  STAFF_SERVICES_UPDATED: "staff.services_updated",
   WORKING_HOURS_UPDATED: "staff.working_hours_updated",
 
   SERVICE_CATEGORY_CREATED: "service_category.created",

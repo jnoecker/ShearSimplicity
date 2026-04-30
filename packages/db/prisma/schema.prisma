@@ -158,6 +158,7 @@ model Salon {
   appointmentServices  AppointmentService[]
   appointmentSeries        AppointmentSeries[]
   appointmentSeriesServices AppointmentSeriesService[]
+  staffMemberServices  StaffMemberService[]
   payments             Payment[]
   messages             Message[]
   domainEvents         DomainEvent[]
@@ -218,11 +219,12 @@ model StaffMember {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  salon         Salon          @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  salon         Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   appointments  Appointment[]
   appointmentSeries AppointmentSeries[]
   workingHours  WorkingHours[]
+  trainedServices StaffMemberService[]
 
   @@unique([salonId, userId])
   // Composite-FK target — referenced by Appointment/WorkingHours so cross-tenant
@@ -230,6 +232,26 @@ model StaffMember {
   @@unique([id, salonId], name: "staff_members_id_salonId_key")
   @@index([salonId, isActive])
   @@map("staff_members")
+}
+
+// Junction: which services a stylist is trained to perform. Junction (not a
+// `String[]` on StaffMember) so the composite FK enforces same-salon
+// integrity, matching AppointmentService / AppointmentSeriesService.
+model StaffMemberService {
+  id            String   @id @default(uuid()) @db.Uuid
+  salonId       String   @db.Uuid
+  staffMemberId String   @db.Uuid
+  serviceId     String   @db.Uuid
+  createdAt     DateTime @default(now())
+
+  salon       Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffMember StaffMember @relation(fields: [staffMemberId, salonId], references: [id, salonId], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId, salonId], references: [id, salonId], onDelete: Cascade)
+
+  @@unique([staffMemberId, serviceId])
+  @@index([salonId, staffMemberId])
+  @@index([salonId, serviceId])
+  @@map("staff_member_services")
 }
 
 model WorkingHours {
@@ -317,6 +339,7 @@ model Service {
   category             ServiceCategory?     @relation(fields: [categoryId, salonId], references: [id, salonId], onDelete: Restrict)
   appointmentServices  AppointmentService[]
   appointmentSeriesServices AppointmentSeriesService[]
+  staffMemberServices  StaffMemberService[]
 
   @@unique([salonId, slug])
   // Composite-FK target — referenced by AppointmentService.

@@ -10,11 +10,13 @@ import {
 } from "@nestjs/common";
 import {
   staffCreateSchema,
+  staffServicesReplaceSchema,
   staffUpdateSchema,
   workingHoursReplaceSchema,
 } from "@shearsimp/shared";
 import type {
   StaffCreateInput,
+  StaffServicesReplaceInput,
   StaffUpdateInput,
   WorkingHoursReplaceInput,
 } from "@shearsimp/shared";
@@ -61,6 +63,17 @@ export class StaffController {
     @Body(new ZodValidationPipe(staffUpdateSchema)) input: StaffUpdateInput,
   ) {
     return this.staff.update(salon.salonId, user.userId, id, input);
+  }
+
+  @Put(":id/services")
+  replaceServices(
+    @CurrentSalon() salon: ActiveSalon,
+    @CurrentUser() user: AuthIdentity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(staffServicesReplaceSchema))
+    input: StaffServicesReplaceInput,
+  ) {
+    return this.staff.replaceServices(salon.salonId, user.userId, id, input);
   }
 
   @Put(":id/working-hours")

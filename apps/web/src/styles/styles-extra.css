@@ -1231,6 +1231,48 @@
 .ss-hours-sep { font-size: 12.5px; color: var(--ss-text-muted); }
 .ss-btn-tiny { padding: 6px 10px; font-size: 12px; }
 
+/* Stylist services checklist (issue #20). Reuses the panel-strong / line
+   tokens from working hours so the two cards read as siblings. */
+.ss-svc-checklist-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.ss-svc-checklist {
+  border: 1px solid var(--ss-line);
+  border-radius: 12px;
+  background: var(--ss-panel-strong);
+  padding: 14px 16px;
+  margin: 0;
+}
+.ss-svc-checklist + .ss-svc-checklist { margin-top: 8px; }
+.ss-svc-checklist legend {
+  padding: 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ss-text-secondary);
+}
+.ss-svc-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 16px;
+  margin-top: 6px;
+}
+.ss-svc-checklist-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13.5px;
+  color: var(--ss-text-primary);
+  cursor: pointer;
+}
+.ss-svc-checklist-item input { cursor: pointer; }
+.ss-svc-inactive-tag {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ss-text-muted);
+  margin-left: 4px;
+}
+
 /* Card variant: flush table inside. */
 .ss-card.is-flush { padding: 0; }
 .ss-card.is-flush .ss-card-head {

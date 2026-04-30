@@ -127,6 +127,17 @@ export type WorkingHoursReplaceInput = z.infer<
   typeof workingHoursReplaceSchema
 >;
 
+// Service ↔ stylist training matrix (issue #20). Replacement semantics so the
+// settings UI can post the full set; server diffs to handle inserts/deletes.
+// Empty array is allowed — a brand-new stylist with no services yet.
+export const staffServicesReplaceSchema = z.object({
+  serviceIds: z.array(uuidSchema).max(200),
+});
+
+export type StaffServicesReplaceInput = z.infer<
+  typeof staffServicesReplaceSchema
+>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Salon membership (used by staff page when linking a stylist to a user)
 // ─────────────────────────────────────────────────────────────────────────────
