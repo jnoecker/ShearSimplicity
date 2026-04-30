@@ -888,7 +888,12 @@ function StaffField({
               className={`bk-staff${isOn ? " is-on" : ""}${disabled ? " is-disabled" : ""}`}
               aria-pressed={isOn}
               aria-disabled={disabled || undefined}
-              disabled={disabled}
+              // Don't set the native `disabled` attribute — Chromium and
+              // Safari swallow mouse events on disabled buttons, which
+              // suppresses the `title` tooltip that explains *why* the
+              // tile is faded. ARIA + onClick guard + cursor:not-allowed
+              // give us the same effective behaviour while preserving the
+              // hover hint operators rely on.
               title={tip}
               onClick={() => {
                 if (disabled) return;
