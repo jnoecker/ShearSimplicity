@@ -72,6 +72,9 @@ interface Props {
   selectedStaffId: string | null;
   /** Service catalog so we can color-code by category. */
   services: BookService[];
+  /** Service ids the user has picked so far. Used to fade columns for
+   *  stylists who can't perform every selection (issue #20). */
+  selectedServiceIds: Set<string>;
   /** Sum of selected service durations — used to gate which slots are open. */
   selectedDurationMin: number;
   /** Set salon-local date (YYYY-MM-DD); transitions to day mode. */
@@ -95,6 +98,7 @@ export function BookCalendar({
   staff,
   selectedStaffId,
   services,
+  selectedServiceIds,
   selectedDurationMin,
   onSelectDate,
   onPickSlot,
@@ -207,6 +211,7 @@ export function BookCalendar({
             dateLabel={dateLabel}
             staff={staff}
             selectedStaffId={selectedStaffId}
+            selectedServiceIds={selectedServiceIds}
             appointments={selectedDayAppts}
             kindForServiceId={kindForServiceId}
             onPickSlot={(minutes, staffId) =>
@@ -496,6 +501,7 @@ function BookDayView({
   dateLabel,
   staff,
   selectedStaffId,
+  selectedServiceIds,
   appointments,
   kindForServiceId,
   onPickSlot,
@@ -508,6 +514,7 @@ function BookDayView({
   dateLabel: string;
   staff: BookStaff[];
   selectedStaffId: string | null;
+  selectedServiceIds: Set<string>;
   appointments: BookCalendarAppointment[];
   kindForServiceId: Map<string, CategoryKind>;
   onPickSlot: (minutes: number, staffId: string) => void;
@@ -516,6 +523,19 @@ function BookDayView({
   const visibleStaff = selectedStaffId
     ? staff.filter((s) => s.id === selectedStaffId)
     : staff;
+  // Stylists who can't perform every picked service get their column faded
+  // and their slots disabled, mirroring the gating on the stylist tiles
+  // above (issue #20). Indexed by visibleStaff position so render code can
+  // toggle a class without re-deriving the matrix per slot.
+  const untrained = useMemo(() => {
+    const picked = Array.from(selectedServiceIds);
+    if (picked.length === 0) return visibleStaff.map(() => false);
+    return visibleStaff.map((s) => {
+      const trained = new Set(s.serviceIds);
+      return picked.some((id) => !trained.has(id));
+    });
+  }, [visibleStaff, selectedServiceIds]);
+
   // Build a per-stylist occupancy map keyed by slot index. A slot is
   // "occupied" if it falls inside any active appointment for that stylist.
   // Computing once per render is cheap (4 staff × 40 slots).
@@ -564,33 +584,41 @@ function BookDayView({
         }}
       >
         <div className="bk-day-h-spacer" />
-        {visibleStaff.map((s, i) => (
-          <div
-            key={s.id}
-            className="bk-day-h"
-            style={
-              {
-                ["--bk-stylist-tint" as string]: s.color
-                  ? `linear-gradient(135deg, ${s.color}, ${s.color})`
-                  : STAFF_GRADIENTS[i % STAFF_GRADIENTS.length],
-              } as React.CSSProperties
-            }
-          >
-            <span
-              className="bk-day-h-avatar"
-              style={{
-                background: s.color
-                  ? `linear-gradient(135deg, ${s.color}, ${s.color})`
-                  : STAFF_GRADIENTS[i % STAFF_GRADIENTS.length],
-              }}
+        {visibleStaff.map((s, i) => {
+          const isUntrained = untrained[i];
+          return (
+            <div
+              key={s.id}
+              className={`bk-day-h${isUntrained ? " is-untrained" : ""}`}
+              title={
+                isUntrained
+                  ? `${s.displayName.split(" ")[0]} isn't trained on every picked service`
+                  : undefined
+              }
+              style={
+                {
+                  ["--bk-stylist-tint" as string]: s.color
+                    ? `linear-gradient(135deg, ${s.color}, ${s.color})`
+                    : STAFF_GRADIENTS[i % STAFF_GRADIENTS.length],
+                } as React.CSSProperties
+              }
             >
-              {initialsOf(s.displayName)}
-            </span>
-            <span className="bk-day-h-name">
-              {s.displayName.split(" ")[0]}
-            </span>
-          </div>
-        ))}
+              <span
+                className="bk-day-h-avatar"
+                style={{
+                  background: s.color
+                    ? `linear-gradient(135deg, ${s.color}, ${s.color})`
+                    : STAFF_GRADIENTS[i % STAFF_GRADIENTS.length],
+                }}
+              >
+                {initialsOf(s.displayName)}
+              </span>
+              <span className="bk-day-h-name">
+                {s.displayName.split(" ")[0]}
+              </span>
+            </div>
+          );
+        })}
 
         <div
           className="bk-day-times"
@@ -614,10 +642,11 @@ function BookDayView({
 
         {visibleStaff.map((s, ci) => {
           const occ = occupancy[ci] ?? [];
+          const isUntrained = untrained[ci];
           return (
             <div
               key={s.id}
-              className="bk-day-col"
+              className={`bk-day-col${isUntrained ? " is-untrained" : ""}`}
               style={{
                 gridRow: `2 / span ${TOTAL_SLOTS}`,
                 height: SLOT_HEIGHT * TOTAL_SLOTS,
@@ -651,36 +680,37 @@ function BookDayView({
                   service — clicks were dispatched to whichever button
                   happened to be last in DOM order at that y-coord, so
                   picking "1:00" often booked 1:15 / 1:30 / etc. */}
-              {Array.from({ length: TOTAL_SLOTS }).map((_, slot) => {
-                if (occ[slot]) return null;
-                let fits = true;
-                for (let k = 0; k < requiredSlots; k++) {
-                  if (slot + k >= TOTAL_SLOTS || occ[slot + k]) {
-                    fits = false;
-                    break;
+              {!isUntrained &&
+                Array.from({ length: TOTAL_SLOTS }).map((_, slot) => {
+                  if (occ[slot]) return null;
+                  let fits = true;
+                  for (let k = 0; k < requiredSlots; k++) {
+                    if (slot + k >= TOTAL_SLOTS || occ[slot + k]) {
+                      fits = false;
+                      break;
+                    }
                   }
-                }
-                if (!fits) return null;
-                const minutes = SLOT_START_MIN + slot * SLOT_MIN;
-                return (
-                  <button
-                    key={`o${slot}`}
-                    type="button"
-                    className="bk-day-open"
-                    style={{
-                      top: slot * SLOT_HEIGHT,
-                      height: SLOT_HEIGHT,
-                    }}
-                    aria-label={`Book ${minutesLabel(minutes)} with ${s.displayName}`}
-                    onClick={() => {
-                      onPickSlot(minutes, s.id);
-                      if (!selectedStaffId && onSelectStaff) {
-                        onSelectStaff(s.id);
-                      }
-                    }}
-                  />
-                );
-              })}
+                  if (!fits) return null;
+                  const minutes = SLOT_START_MIN + slot * SLOT_MIN;
+                  return (
+                    <button
+                      key={`o${slot}`}
+                      type="button"
+                      className="bk-day-open"
+                      style={{
+                        top: slot * SLOT_HEIGHT,
+                        height: SLOT_HEIGHT,
+                      }}
+                      aria-label={`Book ${minutesLabel(minutes)} with ${s.displayName}`}
+                      onClick={() => {
+                        onPickSlot(minutes, s.id);
+                        if (!selectedStaffId && onSelectStaff) {
+                          onSelectStaff(s.id);
+                        }
+                      }}
+                    />
+                  );
+                })}
 
               {/* Picked-slot preview — non-interactive overlay that shows
                   the appointment's full duration in this column. We paint

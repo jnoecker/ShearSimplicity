@@ -1951,6 +1951,13 @@
   background: linear-gradient(180deg, rgba(30, 195, 217, 0.14), rgba(30, 195, 217, 0.04));
   box-shadow: 0 0 0 3px rgba(30, 195, 217, 0.18);
 }
+.bk-staff.is-disabled,
+.bk-staff[disabled] {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+.bk-staff.is-disabled:hover { border-color: var(--ss-panel-edge); }
 .bk-staff-avatar {
   width: 36px;
   height: 36px;
@@ -2376,6 +2383,15 @@
 .bk-day-col {
   position: relative;
   border-left: 1px solid var(--ss-panel-edge);
+}
+/* Untrained-stylist column (issue #20): mute the header + body so the
+   operator can see the stylist's load context but knows they can't take
+   the picked services. Slots are simply not rendered for these columns,
+   so no further interaction-blocking is needed. */
+.bk-day-h.is-untrained,
+.bk-day-col.is-untrained {
+  opacity: 0.42;
+  filter: grayscale(0.6);
 }
 .bk-day-hour-line {
   position: absolute;

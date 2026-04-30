@@ -18,11 +18,18 @@ import { appendDomainEvent } from "../common/domain-events";
 export class StaffService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(salonId: string) {
-    return this.prisma.staffMember.findMany({
+  async list(salonId: string) {
+    const rows = await this.prisma.staffMember.findMany({
       where: { salonId },
       orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
+      include: {
+        trainedServices: { select: { serviceId: true } },
+      },
     });
+    return rows.map(({ trainedServices, ...rest }) => ({
+      ...rest,
+      serviceIds: trainedServices.map((t) => t.serviceId),
+    }));
   }
 
   async get(salonId: string, id: string) {
