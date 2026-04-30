@@ -27,6 +27,10 @@ export interface BookStaff {
   title: string | null;
   color: string | null;
   isActive: boolean;
+  /** Services this stylist is trained to perform (issue #20). Empty array
+   *  means none — the booking flow disables their tile entirely once any
+   *  service is picked. */
+  serviceIds: string[];
 }
 
 export interface BookService {
@@ -190,12 +194,20 @@ export function BookAppointmentModal({
     !isPending;
 
   function toggleService(id: string) {
-    setServiceIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(serviceIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setServiceIds(next);
+    // If the in-flight set now includes something the picked stylist can't
+    // do, clear the stylist so the booking can't sail through to an
+    // outright FK error on submit. The user re-picks from the now-gated
+    // tile row.
+    if (staffId) {
+      const picked = staff.find((s) => s.id === staffId);
+      if (picked && [...next].some((sid) => !picked.serviceIds.includes(sid))) {
+        setStaffId("");
+      }
+    }
   }
 
   function pickClient(id: string) {
@@ -308,6 +320,8 @@ export function BookAppointmentModal({
 
             <StaffField
               staff={staff}
+              services={services}
+              selectedServiceIds={serviceIds}
               selectedId={staffId}
               onSelect={setStaffId}
             />
@@ -326,6 +340,7 @@ export function BookAppointmentModal({
                 staff={staff}
                 selectedStaffId={staffId || null}
                 services={services}
+                selectedServiceIds={serviceIds}
                 selectedDurationMin={totalDuration}
                 onSelectDate={(iso) => {
                   setDate(iso);
@@ -828,27 +843,57 @@ function ServicesField({
 
 function StaffField({
   staff,
+  services,
+  selectedServiceIds,
   selectedId,
   onSelect,
 }: {
   staff: BookStaff[];
+  services: BookService[];
+  selectedServiceIds: Set<string>;
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
+  const serviceNames = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of services) m.set(s.id, s.name);
+    return m;
+  }, [services]);
+
+  const pickedServiceIds = useMemo(
+    () => Array.from(selectedServiceIds),
+    [selectedServiceIds],
+  );
+
   return (
     <div className="bk-field">
       <label className="bk-label">Stylist</label>
       <div className="bk-staff-row">
         {staff.map((s, i) => {
           const isOn = s.id === selectedId;
+          const trained = new Set(s.serviceIds);
+          const untrainedFor = pickedServiceIds.filter((id) => !trained.has(id));
+          const disabled = untrainedFor.length > 0;
+          const tip = disabled
+            ? `${s.displayName.split(" ")[0]} isn't trained on ${untrainedFor
+                .map((id) => serviceNames.get(id) ?? "this service")
+                .join(", ")}`
+            : isOn
+              ? "Click to clear"
+              : undefined;
           return (
             <button
               key={s.id}
               type="button"
-              className={`bk-staff${isOn ? " is-on" : ""}`}
+              className={`bk-staff${isOn ? " is-on" : ""}${disabled ? " is-disabled" : ""}`}
               aria-pressed={isOn}
-              title={isOn ? "Click to clear" : undefined}
-              onClick={() => onSelect(isOn ? "" : s.id)}
+              aria-disabled={disabled || undefined}
+              disabled={disabled}
+              title={tip}
+              onClick={() => {
+                if (disabled) return;
+                onSelect(isOn ? "" : s.id);
+              }}
             >
               <span
                 className="bk-staff-avatar"

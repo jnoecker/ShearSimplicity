@@ -343,8 +343,6 @@ greenfield product backlog that hasn't been touched at all.
 Cross-phase deferrals — see the `deferred` label on the repo:
 
 - [#18](https://github.com/jnoecker/ShearSimplicity/issues/18) — Migrate to Stripe Connect for per-salon money movement
-- [#19](https://github.com/jnoecker/ShearSimplicity/issues/19) — Recurring appointments / cadence support
-- [#20](https://github.com/jnoecker/ShearSimplicity/issues/20) — Service ↔ stylist training matrix
 - [#21](https://github.com/jnoecker/ShearSimplicity/issues/21) — Per-salon configurable reminder lead time
 - [#22](https://github.com/jnoecker/ShearSimplicity/issues/22) — Deep-link tokens for cancel/reschedule SMS
 - [#23](https://github.com/jnoecker/ShearSimplicity/issues/23) — Message history UI per client
