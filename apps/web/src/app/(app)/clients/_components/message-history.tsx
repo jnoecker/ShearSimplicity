@@ -1,3 +1,5 @@
+"use client";
+
 // Read-only SMS thread on the client profile. Outbound bubbles render on
 // the right (us → them), inbound on the left, and a kind pill rides on
 // each outbound bubble so a receptionist can scan the column for what
@@ -6,6 +8,12 @@
 // Bubbles render newest-first to match the API; flip the array on render
 // so the timeline reads top-to-bottom oldest → newest, which is how chat
 // threads conventionally read.
+//
+// Client component on purpose: the Today/Yesterday divider and the bubble
+// timestamps are computed from `new Date()` and `toLocale*` calls, which
+// would otherwise resolve in the server's locale/timezone. Rendering in
+// the browser pins them to the receptionist's wall clock, which is what
+// they expect when triaging a thread near midnight.
 
 export type MessageDirection = "OUTBOUND" | "INBOUND";
 export type MessageStatus =

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { MessageDirection, Prisma } from "@prisma/client";
+import { MessageChannel, MessageDirection, Prisma } from "@prisma/client";
 import { EventType } from "@shearsimp/shared";
 import type {
   ClientCreateInput,
@@ -106,7 +106,15 @@ export class ClientsService {
 
     // Fetch one extra row to detect whether more pages exist without a
     // separate count query.
-    const where: Prisma.MessageWhereInput = { salonId, clientId };
+    //
+    // Scope to SMS — the kind heuristics (STOP/YES sniffing, OutboxEvent
+    // mapping) are SMS-shaped, and the UI labels this card as SMS history.
+    // VOICE / EMAIL Messages would render with the wrong pill kinds.
+    const where: Prisma.MessageWhereInput = {
+      salonId,
+      clientId,
+      channel: MessageChannel.SMS,
+    };
     if (decoded) {
       where.OR = [
         { createdAt: { lt: decoded.createdAt } },

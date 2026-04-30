@@ -93,6 +93,18 @@ describe("ClientsService.listMessages", () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it("scopes the query to SMS so VOICE / EMAIL rows can't leak in", async () => {
+    const { service, prisma } = buildService({ messages: [] });
+    await service.listMessages(SALON_ID, CLIENT_ID, {});
+    const findManyArgs = (prisma.message.findMany as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as { where: { channel?: string; salonId?: string; clientId?: string } };
+    expect(findManyArgs.where).toMatchObject({
+      salonId: SALON_ID,
+      clientId: CLIENT_ID,
+      channel: "SMS",
+    });
+  });
+
   it("returns messages newest-first with a kind derived from the related outbox event", async () => {
     const { service } = buildService({
       messages: [
