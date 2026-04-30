@@ -12,11 +12,15 @@ import {
 import {
   cancelAppointment,
   completeAppointment,
+  convertSeriesToIndefiniteAction,
+  extendSeriesAction,
   refundPaymentAction,
   rescheduleAppointment,
   startCheckoutAction,
   transitionAppointment,
 } from "../_actions";
+import { CascadePromptModal } from "./cascade-prompt-modal";
+import { CancelAppointmentModal } from "./cancel-appointment-modal";
 
 // Minutes-since-day-start grid. The calendar opens at SLOT_START minutes (9 AM
 // default) and runs until SLOT_END (7 PM). 15-minute granularity at 14px/slot
@@ -58,6 +62,15 @@ export interface ScheduleAppointmentService {
   currencySnapshot: string;
 }
 
+export interface ScheduleSeriesSummary {
+  id: string;
+  everyNWeeks: number;
+  /** null = indefinite (no cap to extend; runs forever until cancelled). */
+  stopAfterVisits: number | null;
+  status: "ACTIVE" | "CANCELLED" | "COMPLETED";
+  anchorIndex: number;
+}
+
 export interface ScheduleAppointment {
   id: string;
   startAt: string;
@@ -75,6 +88,14 @@ export interface ScheduleAppointment {
   client: { id: string; displayName: string; phone: string | null };
   staffMember: { id: string; displayName: string };
   services: ScheduleAppointmentService[];
+  /** When set, this appointment is part of a recurring series. seriesIndex
+   *  is the 1-based occurrence number within the series. */
+  seriesId: string | null;
+  seriesIndex: number | null;
+  /** Series summary, included by the API when seriesId is set. Drives the
+   *  recurring glyph, the detail-panel "every N weeks" line, and the
+   *  ending-soon banner. */
+  series: ScheduleSeriesSummary | null;
 }
 
 export type SchedulePaymentStatus =
@@ -179,6 +200,20 @@ export function ScheduleView({
     slot: number;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Stash the reschedule params from a drag-drop on a series occurrence
+  // until the cascade prompt resolves. null = no prompt active.
+  const [pendingReschedule, setPendingReschedule] = useState<{
+    appointmentId: string;
+    clientName: string;
+    startAtIso: string;
+    staffMemberId?: string;
+  } | null>(null);
+  // null = closed; { id } = open with that appointment.
+  const [cancelTarget, setCancelTarget] = useState<{
+    id: string;
+    clientName: string;
+    isSeries: boolean;
+  } | null>(null);
 
   // Lookup table from serviceId to its category kind (for color coding).
   // Keyed by snapshot service id rather than name so it's stable across
@@ -287,13 +322,49 @@ export function ScheduleView({
       timezone,
     ).toISOString();
 
+    const staffMemberId =
+      block.staffIndex === staffIndex ? undefined : targetStaff.id;
+
+    // Series occurrence: ask which scope before firing. Resolving the
+    // prompt calls runReschedule() with the chosen scope. Non-series
+    // appointments skip the prompt entirely. Both ACTIVE and COMPLETED
+    // series can still have future occurrences worth cascading — only
+    // CANCELLED skips the prompt (its future occurrences were already
+    // cancelled when the series ended).
+    if (
+      block.appointment.seriesId &&
+      block.appointment.series?.status !== "CANCELLED"
+    ) {
+      setPendingReschedule({
+        appointmentId,
+        clientName: block.appointment.client.displayName,
+        startAtIso: newStartIso,
+        staffMemberId,
+      });
+      return;
+    }
+
+    runReschedule({
+      appointmentId,
+      startAtIso: newStartIso,
+      staffMemberId,
+      scope: "one",
+    });
+  }
+
+  function runReschedule(args: {
+    appointmentId: string;
+    startAtIso: string;
+    staffMemberId?: string;
+    scope: "one" | "following";
+  }) {
     setErrorMsg(null);
     startTransition(async () => {
       const result = await rescheduleAppointment({
-        id: appointmentId,
-        startAtIso: newStartIso,
-        staffMemberId:
-          block.staffIndex === staffIndex ? undefined : targetStaff.id,
+        id: args.appointmentId,
+        startAtIso: args.startAtIso,
+        staffMemberId: args.staffMemberId,
+        scope: args.scope,
       });
       if (!result.ok) {
         setErrorMsg(result.message ?? "Reschedule failed");
@@ -489,6 +560,68 @@ export function ScheduleView({
               router.refresh();
             });
           }}
+          onRequestCancel={() =>
+            setCancelTarget({
+              id: selected.id,
+              clientName: selected.client.displayName,
+              // ACTIVE *and* COMPLETED series can still have future
+              // occurrences (a finite series flips to COMPLETED as soon as
+              // the cap is materialized). Only CANCELLED has nothing left
+              // to cascade.
+              isSeries:
+                !!selected.seriesId && selected.series?.status !== "CANCELLED",
+            })
+          }
+        />
+      )}
+
+      {pendingReschedule && (
+        <CascadePromptModal
+          copy={{
+            title: `Move ${pendingReschedule.clientName}'s appointment`,
+            body: "This visit is part of a recurring series. Apply the new time to just this one, or this and every future occurrence?",
+            oneLabel: "Just this one",
+            followingLabel: "This and all future",
+          }}
+          isPending={isPending}
+          onCancel={() => setPendingReschedule(null)}
+          onPick={(scope) => {
+            const args = pendingReschedule;
+            setPendingReschedule(null);
+            runReschedule({
+              appointmentId: args.appointmentId,
+              startAtIso: args.startAtIso,
+              staffMemberId: args.staffMemberId,
+              scope,
+            });
+          }}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelAppointmentModal
+          clientName={cancelTarget.clientName}
+          isSeries={cancelTarget.isSeries}
+          isPending={isPending}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={({ reason, scope }) => {
+            const target = cancelTarget;
+            setCancelTarget(null);
+            setErrorMsg(null);
+            startTransition(async () => {
+              const r = await cancelAppointment({
+                id: target.id,
+                reason,
+                scope,
+              });
+              if (!r.ok) {
+                setErrorMsg(r.message ?? "Cancel failed");
+                return;
+              }
+              setSelectedId(null);
+              router.refresh();
+            });
+          }}
         />
       )}
     </>
@@ -608,6 +741,15 @@ function AppointmentBlock({
     >
       <div className="ss-cal-block-name">
         {appointment.client.displayName}
+        {appointment.seriesId && (
+          <span
+            className="ss-cal-block-recur"
+            title="Part of a recurring series"
+            aria-label="Recurring"
+          >
+            ↻
+          </span>
+        )}
         {paymentBadgeKind && (
           <span
             className={`ss-cal-block-pay is-${paymentBadgeKind}`}
@@ -638,6 +780,7 @@ function DetailsPanel({
   isPending,
   onClose,
   onAction,
+  onRequestCancel,
 }: {
   appointment: ScheduleAppointment;
   payment: SchedulePayment | null;
@@ -647,6 +790,7 @@ function DetailsPanel({
   onAction: (
     run: () => Promise<{ ok: boolean; message?: string }>,
   ) => void;
+  onRequestCancel: () => void;
 }) {
   const start = formatTimeInTimezone(new Date(appointment.startAt), timezone);
   const end = formatTimeInTimezone(new Date(appointment.endAt), timezone);
@@ -696,6 +840,12 @@ function DetailsPanel({
         {start} – {end} · with {appointment.staffMember.displayName}
       </p>
       <p className="ss-detail-services">{services}</p>
+      {appointment.series && appointment.seriesIndex !== null && (
+        <p className="ss-detail-recur">
+          <span className="ss-detail-recur-glyph" aria-hidden>↻</span>
+          {seriesSummaryLine(appointment.series, appointment.seriesIndex)}
+        </p>
+      )}
       {appointment.client.phone && (
         <p className="ss-detail-meta">{appointment.client.phone}</p>
       )}
@@ -712,6 +862,17 @@ function DetailsPanel({
         </div>
       )}
       <PaymentSection appointment={appointment} payment={payment} />
+      {appointment.series &&
+        appointment.seriesIndex !== null &&
+        shouldShowEndingBanner(appointment.series, appointment.seriesIndex) && (
+          <SeriesEndingSoonBanner
+            seriesId={appointment.series.id}
+            seriesIndex={appointment.seriesIndex}
+            stopAfterVisits={appointment.series.stopAfterVisits!}
+            isPending={isPending}
+            onAction={onAction}
+          />
+        )}
       <div className="ss-detail-actions">
         {advanceTarget.map((t) => (
           <button
@@ -748,12 +909,7 @@ function DetailsPanel({
             type="button"
             className="ss-btn ss-btn-ghost"
             disabled={isPending}
-            onClick={() => {
-              const reason = window.prompt("Cancellation reason (optional)") ?? "";
-              onAction(() =>
-                cancelAppointment({ id: appointment.id, reason }),
-              );
-            }}
+            onClick={onRequestCancel}
           >
             Cancel
           </button>
@@ -1052,5 +1208,99 @@ function slotForBlock(block: RenderBlock): number {
   return Math.max(
     0,
     Math.round((block.startMin - SLOT_START_MIN) / SLOT_MIN),
+  );
+}
+
+// "Recurring · every 4 weeks · 5 of 6" / "ongoing" / "completed".
+function seriesSummaryLine(
+  series: ScheduleSeriesSummary,
+  seriesIndex: number,
+): string {
+  const cadence = `every ${cadenceLabel(series.everyNWeeks)}`;
+  const progress =
+    series.status === "CANCELLED"
+      ? "ended"
+      : series.stopAfterVisits === null
+        ? "ongoing"
+        : `${seriesIndex} of ${series.stopAfterVisits}`;
+  return `Recurring · ${cadence} · ${progress}`;
+}
+
+function cadenceLabel(everyNWeeks: number): string {
+  if (everyNWeeks === 1) return "week";
+  return `${everyNWeeks} weeks`;
+}
+
+// Show the ending-soon banner on the last 1-2 occurrences of a finite
+// series. Includes COMPLETED — a finite series flips to COMPLETED as soon
+// as its cap is fully materialized, but the occurrences themselves are
+// still in the future and the banner is the only in-UI recovery path
+// (extend / convert to indefinite). Only CANCELLED is excluded; once a
+// series is cancelled there's nothing to extend.
+function shouldShowEndingBanner(
+  series: ScheduleSeriesSummary,
+  seriesIndex: number,
+): boolean {
+  if (series.status === "CANCELLED") return false;
+  if (series.stopAfterVisits === null) return false;
+  return seriesIndex >= series.stopAfterVisits - 1;
+}
+
+function SeriesEndingSoonBanner({
+  seriesId,
+  seriesIndex,
+  stopAfterVisits,
+  isPending,
+  onAction,
+}: {
+  seriesId: string;
+  seriesIndex: number;
+  stopAfterVisits: number;
+  isPending: boolean;
+  onAction: (
+    run: () => Promise<{ ok: boolean; message?: string }>,
+  ) => void;
+}) {
+  const isLast = seriesIndex === stopAfterVisits;
+  const headline = isLast
+    ? "Last visit in this series."
+    : `Second-to-last visit (${seriesIndex} of ${stopAfterVisits}).`;
+  return (
+    <div className="ss-detail-section ss-series-end-banner" role="status">
+      <div className="ss-series-end-banner-head">
+        <span className="ss-detail-recur-glyph" aria-hidden>↻</span>
+        <strong>{headline}</strong>
+      </div>
+      <p className="ss-series-end-banner-body">
+        Don&apos;t lose this regular. Add more visits or switch to indefinite
+        so it never runs out.
+      </p>
+      <div className="ss-series-end-banner-actions">
+        <button
+          type="button"
+          className="ss-btn ss-btn-ghost"
+          disabled={isPending}
+          onClick={() =>
+            onAction(() =>
+              extendSeriesAction({ seriesId, additionalVisits: 6 }),
+            )
+          }
+        >
+          Extend by 6 more
+        </button>
+        <button
+          type="button"
+          className="ss-btn ss-btn-primary"
+          disabled={isPending}
+          onClick={() =>
+            onAction(() =>
+              convertSeriesToIndefiniteAction({ seriesId }),
+            )
+          }
+        >
+          Switch to indefinite
+        </button>
+      </div>
+    </div>
   );
 }

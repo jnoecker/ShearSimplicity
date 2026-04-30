@@ -56,6 +56,19 @@ const APPOINTMENT_INCLUDE = {
       sortOrder: true,
     },
   },
+  // Surface enough series state for the schedule UI to render the recurring
+  // glyph on the calendar block, the "every N weeks · ongoing" line on the
+  // detail panel, and the ending-soon banner — without a separate fetch
+  // per appointment. Nullable: only joins when seriesId is set.
+  series: {
+    select: {
+      id: true,
+      everyNWeeks: true,
+      stopAfterVisits: true,
+      status: true,
+      anchorIndex: true,
+    },
+  },
 } satisfies Prisma.AppointmentInclude;
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{

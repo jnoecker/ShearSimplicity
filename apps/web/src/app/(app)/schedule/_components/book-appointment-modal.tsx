@@ -13,6 +13,7 @@ import { categoryKind, type CategoryKind } from "@/lib/service-categories";
 import { instantAtMinutes } from "@/lib/salon-time";
 import {
   createAppointmentAction,
+  createSeriesAction,
   searchClientsAction,
 } from "../_actions";
 import {
@@ -110,6 +111,14 @@ export function BookAppointmentModal({
   const [notes, setNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Recurrence section. Off by default — most bookings are one-offs.
+  // When on: cadence + cap. `noEndDate` defaults checked because
+  // "indefinite" is the safe answer that prevents Darlene-style series
+  // from quietly running out 20 years from now (issue #19).
+  const [recurOn, setRecurOn] = useState(false);
+  const [everyNWeeks, setEveryNWeeks] = useState(4);
+  const [noEndDate, setNoEndDate] = useState(true);
+  const [stopAfterVisits, setStopAfterVisits] = useState(6);
 
   // Lock body scroll while the modal is open, restore on unmount.
   useEffect(() => {
@@ -200,17 +209,27 @@ export function BookAppointmentModal({
     if (!canSubmit || minutes === null) return;
     setErrorMsg(null);
     const startAtIso = instantAtMinutes(minutes, date, timezone).toISOString();
+    const baseInput = {
+      clientId,
+      staffMemberId: staffId,
+      serviceIds: Array.from(serviceIds),
+      startAtIso,
+      notes: notes.trim() || undefined,
+      internalNotes: internalNotes.trim() || undefined,
+    };
     startTransition(async () => {
-      const result = await createAppointmentAction({
-        clientId,
-        staffMemberId: staffId,
-        serviceIds: Array.from(serviceIds),
-        startAtIso,
-        notes: notes.trim() || undefined,
-        internalNotes: internalNotes.trim() || undefined,
-      });
+      const result = recurOn
+        ? await createSeriesAction({
+            ...baseInput,
+            everyNWeeks,
+            stopAfterVisits: noEndDate ? null : stopAfterVisits,
+          })
+        : await createAppointmentAction(baseInput);
       if (!result.ok) {
-        setErrorMsg(result.message ?? "Could not book appointment");
+        setErrorMsg(
+          result.message ??
+            (recurOn ? "Could not create series" : "Could not book appointment"),
+        );
         return;
       }
       router.push(`/schedule?date=${date}`);
@@ -334,6 +353,75 @@ export function BookAppointmentModal({
               )}
             </div>
 
+            <div className="bk-field bk-field-recur">
+              <div className="ss-toggle-row">
+                <div className="ss-toggle-meta">
+                  <span className="ss-toggle-title">Repeat this booking</span>
+                  <span className="ss-toggle-sub">
+                    Set a cadence so the series materializes future visits
+                    automatically.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className={`ss-toggle${recurOn ? " is-on" : ""}`}
+                  role="switch"
+                  aria-checked={recurOn}
+                  aria-label="Repeat this booking"
+                  onClick={() => setRecurOn((v) => !v)}
+                />
+              </div>
+              {recurOn && (
+                <div className="bk-recur-fields">
+                  <div className="bk-recur-row">
+                    <label htmlFor="bk-every">Every</label>
+                    <input
+                      id="bk-every"
+                      type="number"
+                      min={1}
+                      max={52}
+                      value={everyNWeeks}
+                      onChange={(e) =>
+                        setEveryNWeeks(
+                          clampInt(Number(e.target.value), 1, 52, 4),
+                        )
+                      }
+                    />
+                    <span>{everyNWeeks === 1 ? "week" : "weeks"}</span>
+                  </div>
+                  <div className="bk-recur-row">
+                    <label htmlFor="bk-no-end" className="bk-recur-checkbox">
+                      <input
+                        id="bk-no-end"
+                        type="checkbox"
+                        checked={noEndDate}
+                        onChange={(e) => setNoEndDate(e.target.checked)}
+                      />
+                      <span>No end date (recommended for regulars)</span>
+                    </label>
+                  </div>
+                  {!noEndDate && (
+                    <div className="bk-recur-row">
+                      <label htmlFor="bk-stop">Stop after</label>
+                      <input
+                        id="bk-stop"
+                        type="number"
+                        min={2}
+                        max={52}
+                        value={stopAfterVisits}
+                        onChange={(e) =>
+                          setStopAfterVisits(
+                            clampInt(Number(e.target.value), 2, 52, 6),
+                          )
+                        }
+                      />
+                      <span>visits</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="bk-field">
               <label className="bk-label" htmlFor="bk-notes">
                 Notes (visible to client)
@@ -387,7 +475,13 @@ export function BookAppointmentModal({
               className="ss-btn ss-btn-primary"
               disabled={!canSubmit}
             >
-              {isPending ? "Booking…" : "Book appointment"}
+              {isPending
+                ? recurOn
+                  ? "Creating series…"
+                  : "Booking…"
+                : recurOn
+                  ? "Create recurring booking"
+                  : "Book appointment"}
             </button>
           </div>
         </div>
@@ -804,6 +898,14 @@ function formatPrice(cents: number, currency: string): string {
     currency,
     maximumFractionDigits: 0,
   }).format(cents / 100);
+}
+
+function clampInt(n: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.round(n);
+  if (i < min) return min;
+  if (i > max) return max;
+  return i;
 }
 
 function formatDateLabel(iso: string): string {

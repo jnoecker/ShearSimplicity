@@ -78,6 +78,10 @@ export async function rescheduleAppointment(input: {
   id: string;
   startAtIso: string;
   staffMemberId?: string;
+  /** "one" (default) reschedules just this occurrence. "following" cascades
+   *  the same delta to every future occurrence in the series and resets the
+   *  series anchor. Ignored on appointments without a seriesId. */
+  scope?: "one" | "following";
 }): Promise<ActionResult> {
   try {
     await apiFetch(`/appointments/${input.id}/reschedule`, {
@@ -85,6 +89,7 @@ export async function rescheduleAppointment(input: {
       data: {
         startAt: input.startAtIso,
         ...(input.staffMemberId ? { staffMemberId: input.staffMemberId } : {}),
+        ...(input.scope ? { scope: input.scope } : {}),
       },
     });
     revalidatePath("/schedule");
@@ -128,12 +133,87 @@ export async function completeAppointment(
 export async function cancelAppointment(input: {
   id: string;
   reason?: string;
+  /** "one" (default) cancels just this visit. "following" cancels this
+   *  occurrence + all future occurrences and ends the series. Ignored on
+   *  appointments without a seriesId. */
+  scope?: "one" | "following";
 }): Promise<ActionResult> {
   try {
     await apiFetch(`/appointments/${input.id}/cancel`, {
       method: "POST",
-      data: { reason: input.reason ?? "" },
+      data: {
+        reason: input.reason ?? "",
+        ...(input.scope ? { scope: input.scope } : {}),
+      },
     });
+    revalidatePath("/schedule");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// ---------- Recurring appointments (series) ----------
+
+export async function createSeriesAction(input: {
+  clientId: string;
+  staffMemberId: string;
+  serviceIds: string[];
+  startAtIso: string;
+  everyNWeeks: number;
+  /** null = indefinite (the regular long-term-client case). */
+  stopAfterVisits: number | null;
+  notes?: string;
+  internalNotes?: string;
+}): Promise<ActionResult> {
+  try {
+    const created = await apiFetch<{ id: string }>("/appointment-series", {
+      method: "POST",
+      data: {
+        clientId: input.clientId,
+        staffMemberId: input.staffMemberId,
+        serviceIds: input.serviceIds,
+        startAt: input.startAtIso,
+        everyNWeeks: input.everyNWeeks,
+        stopAfterVisits: input.stopAfterVisits,
+        notes: input.notes && input.notes.length > 0 ? input.notes : undefined,
+        internalNotes:
+          input.internalNotes && input.internalNotes.length > 0
+            ? input.internalNotes
+            : undefined,
+      },
+    });
+    revalidatePath("/schedule");
+    return { ok: true, appointmentId: created.id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function extendSeriesAction(input: {
+  seriesId: string;
+  additionalVisits: number;
+}): Promise<ActionResult> {
+  try {
+    await apiFetch(`/appointment-series/${input.seriesId}/extend`, {
+      method: "POST",
+      data: { additionalVisits: input.additionalVisits },
+    });
+    revalidatePath("/schedule");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function convertSeriesToIndefiniteAction(input: {
+  seriesId: string;
+}): Promise<ActionResult> {
+  try {
+    await apiFetch(
+      `/appointment-series/${input.seriesId}/convert-to-indefinite`,
+      { method: "POST", data: {} },
+    );
     revalidatePath("/schedule");
     return { ok: true };
   } catch (e) {
