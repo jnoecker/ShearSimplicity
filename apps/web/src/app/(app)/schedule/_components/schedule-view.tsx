@@ -969,7 +969,34 @@ function PaymentSection({
     payment?.status === "PARTIALLY_REFUNDED";
   const failed = payment?.status === "FAILED" || payment?.status === "CANCELLED";
   const pending = payment?.status === "PENDING";
-  const canRefund = succeeded && payment !== null;
+  const totalChargedCents = payment
+    ? payment.amountCents + payment.tipCents
+    : 0;
+  const remainingRefundableCents = payment
+    ? totalChargedCents - payment.refundedCents
+    : 0;
+  const canRefund =
+    succeeded && payment !== null && remainingRefundableCents > 0;
+
+  // Refund picker state. Defaults to "full" — issuing the picker without
+  // changing anything refunds the remaining balance, matching the previous
+  // single-button behaviour.
+  const [refundPickerOpen, setRefundPickerOpen] = useState(false);
+  const [refundPreset, setRefundPreset] =
+    useState<RefundPresetKey>("full");
+  const [refundCustomMode, setRefundCustomMode] = useState(false);
+  const [refundCustomDollars, setRefundCustomDollars] = useState<string>("");
+
+  const refundAmountCents = payment
+    ? refundCustomMode
+      ? Math.max(
+          0,
+          Math.round(Number(refundCustomDollars || "0") * 100),
+        )
+      : refundPresetCents(refundPreset, payment, remainingRefundableCents)
+    : 0;
+  const refundAmountValid =
+    refundAmountCents > 0 && refundAmountCents <= remainingRefundableCents;
 
   async function confirmAndPay() {
     setSubmitting(true);
@@ -981,17 +1008,36 @@ function PaymentSection({
   }
 
   async function refund() {
-    if (!payment) return;
-    if (!window.confirm(`Refund ${formatPrice(payment.amountCents + payment.tipCents - payment.refundedCents, payment.currency)} to the customer? This can't be undone from here.`)) {
+    if (!payment || !refundAmountValid) return;
+    const remainingAfter = remainingRefundableCents - refundAmountCents;
+    const amountStr = formatPriceExact(refundAmountCents, payment.currency);
+    const balanceStr = formatPriceExact(remainingAfter, payment.currency);
+    const message =
+      remainingAfter > 0
+        ? `Refund ${amountStr} to the customer? ${balanceStr} will remain refundable. This can't be undone from here.`
+        : `Refund ${amountStr} to the customer? This will fully refund the payment and can't be undone from here.`;
+    if (!window.confirm(message)) {
       return;
     }
     setSubmitting(true);
     setErrorMsg(null);
-    const result = await refundPaymentAction(payment.id);
+    // When refunding the full remaining balance, omit amountCents so the
+    // API takes the default (full remaining). Avoids a rounding race if the
+    // refunded total shifted between render and submit.
+    const amountArg =
+      refundAmountCents === remainingRefundableCents
+        ? undefined
+        : refundAmountCents;
+    const result = await refundPaymentAction(payment.id, amountArg);
     setSubmitting(false);
     if (!result.ok) {
       setErrorMsg(result.message ?? "Refund failed");
+      return;
     }
+    setRefundPickerOpen(false);
+    setRefundCustomMode(false);
+    setRefundCustomDollars("");
+    setRefundPreset("full");
   }
 
   return (
@@ -1018,7 +1064,8 @@ function PaymentSection({
       )}
       {payment && payment.refundedCents > 0 && (
         <div className="ss-detail-payment-meta">
-          {formatPrice(payment.refundedCents, payment.currency)} refunded
+          {formatPrice(payment.refundedCents, payment.currency)} refunded of{" "}
+          {formatPrice(totalChargedCents, payment.currency)}
         </div>
       )}
 
@@ -1130,20 +1177,138 @@ function PaymentSection({
         </div>
       )}
 
-      {canRefund && (
+      {canRefund && !refundPickerOpen && (
         <button
           type="button"
           className="ss-btn ss-btn-ghost"
           disabled={submitting}
-          onClick={refund}
+          onClick={() => setRefundPickerOpen(true)}
         >
-          {submitting ? "Refunding…" : "Issue refund"}
+          Issue refund
         </button>
+      )}
+
+      {canRefund && refundPickerOpen && payment && (
+        <div className="ss-tip-picker">
+          <div className="ss-tip-presets">
+            {REFUND_PRESETS.map((p) => {
+              const presetCents = refundPresetCents(
+                p.key,
+                payment,
+                remainingRefundableCents,
+              );
+              const disabled = presetCents <= 0;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  className={`ss-tip-chip${
+                    !refundCustomMode && refundPreset === p.key ? " is-on" : ""
+                  }`}
+                  disabled={disabled}
+                  onClick={() => {
+                    setRefundCustomMode(false);
+                    setRefundPreset(p.key);
+                  }}
+                >
+                  <span className="ss-tip-chip-label">{p.label}</span>
+                  <span className="ss-tip-chip-amount">
+                    {formatPriceExact(presetCents, payment.currency)}
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className={`ss-tip-chip${refundCustomMode ? " is-on" : ""}`}
+              onClick={() => setRefundCustomMode(true)}
+            >
+              <span className="ss-tip-chip-label">Custom</span>
+            </button>
+          </div>
+          {refundCustomMode && (
+            <div className="ss-tip-custom">
+              <span>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={remainingRefundableCents / 100}
+                step="0.01"
+                placeholder="0.00"
+                value={refundCustomDollars}
+                onChange={(e) => setRefundCustomDollars(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="ss-tip-summary">
+            <span>Refundable balance</span>
+            <span>
+              {formatPriceExact(
+                remainingRefundableCents,
+                payment.currency,
+              )}
+            </span>
+          </div>
+          <div className="ss-tip-summary is-total">
+            <span>Refund</span>
+            <span>
+              {formatPriceExact(refundAmountCents, payment.currency)}
+            </span>
+          </div>
+          <div className="ss-tip-actions">
+            <button
+              type="button"
+              className="ss-btn ss-btn-ghost"
+              onClick={() => setRefundPickerOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="ss-btn ss-btn-primary"
+              onClick={refund}
+              disabled={submitting || !refundAmountValid}
+            >
+              {submitting
+                ? "Refunding…"
+                : `Refund ${formatPriceExact(refundAmountCents, payment.currency)}`}
+            </button>
+          </div>
+        </div>
       )}
 
       {errorMsg && <div className="ss-form-error">{errorMsg}</div>}
     </div>
   );
+}
+
+const REFUND_PRESETS: ReadonlyArray<{
+  key: RefundPresetKey;
+  label: string;
+}> = [
+  { key: "half", label: "50%" },
+  { key: "full", label: "100%" },
+  { key: "tip", label: "Just tip" },
+];
+
+type RefundPresetKey = "half" | "full" | "tip";
+
+// Stripe doesn't track which portion of a refund was "tip" vs "service",
+// so "Just tip" is a UX shortcut for the captured tip amount, capped by
+// what's actually still refundable. Both branches round to whole cents —
+// Stripe rejects fractional cents.
+function refundPresetCents(
+  key: RefundPresetKey,
+  payment: SchedulePayment,
+  remainingCents: number,
+): number {
+  if (remainingCents <= 0) return 0;
+  if (key === "full") return remainingCents;
+  if (key === "half") return Math.round(remainingCents / 2);
+  return Math.min(payment.tipCents, remainingCents);
 }
 
 function PaymentReturnBanner({
@@ -1175,6 +1340,18 @@ function formatPrice(cents: number, currency: string): string {
     style: "currency",
     currency,
     maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
+// Refund flow shows cents whenever they're non-zero — operators picking a
+// partial amount need exactness, but whole-dollar presets stay clean.
+function formatPriceExact(cents: number, currency: string): string {
+  const showCents = cents % 100 !== 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: showCents ? 2 : 0,
+    maximumFractionDigits: showCents ? 2 : 0,
   }).format(cents / 100);
 }
 

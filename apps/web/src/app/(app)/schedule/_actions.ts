@@ -252,11 +252,12 @@ export async function startCheckoutAction(
 
 export async function refundPaymentAction(
   paymentId: string,
+  amountCents?: number,
 ): Promise<ActionResult> {
   try {
     await apiFetch(`/payments/${paymentId}/refund`, {
       method: "POST",
-      data: {},
+      data: amountCents !== undefined ? { amountCents } : {},
     });
     revalidatePath("/schedule");
     return { ok: true };
