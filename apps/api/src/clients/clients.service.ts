@@ -3,16 +3,29 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { MessageDirection, Prisma } from "@prisma/client";
 import { EventType } from "@shearsimp/shared";
 import type {
   ClientCreateInput,
+  ClientMessagesQuery,
   ClientUpdateInput,
 } from "@shearsimp/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { appendDomainEvent } from "../common/domain-events";
 
 const APPOINTMENT_HISTORY_LIMIT = 50;
+const DEFAULT_MESSAGES_LIMIT = 50;
+const MAX_MESSAGES_LIMIT = 100;
+
+// Map outbound OutboxEvent.eventType → human-readable kind. Anything we
+// haven't tagged falls back to a generic "Message" so a future event type
+// renders sensibly until the matrix catches up.
+const OUTBOUND_KIND_BY_EVENT: Record<string, string> = {
+  [EventType.APPOINTMENT_CREATED]: "confirmation",
+  [EventType.APPOINTMENT_RESCHEDULED]: "reschedule",
+  [EventType.APPOINTMENT_CANCELLED]: "cancellation",
+  [EventType.APPOINTMENT_REMINDER_DUE]: "reminder",
+};
 
 @Injectable()
 export class ClientsService {
@@ -69,6 +82,93 @@ export class ClientsService {
     });
 
     return { ...client, appointments };
+  }
+
+  // Read-only message thread for the client profile. Newest first so the
+  // top of the page shows the latest exchange. Pagination uses (createdAt, id)
+  // as a cursor so ties at the same instant stay stable across pages.
+  async listMessages(
+    salonId: string,
+    clientId: string,
+    query: ClientMessagesQuery,
+  ) {
+    const exists = await this.prisma.client.findFirst({
+      where: { id: clientId, salonId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException("Client not found");
+
+    const limit = Math.min(
+      query.limit ?? DEFAULT_MESSAGES_LIMIT,
+      MAX_MESSAGES_LIMIT,
+    );
+    const decoded = query.cursor ? decodeMessagesCursor(query.cursor) : null;
+
+    // Fetch one extra row to detect whether more pages exist without a
+    // separate count query.
+    const where: Prisma.MessageWhereInput = { salonId, clientId };
+    if (decoded) {
+      where.OR = [
+        { createdAt: { lt: decoded.createdAt } },
+        { createdAt: decoded.createdAt, id: { lt: decoded.id } },
+      ];
+    }
+
+    const rows = await this.prisma.message.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      select: {
+        id: true,
+        direction: true,
+        status: true,
+        body: true,
+        createdAt: true,
+        sentAt: true,
+        deliveredAt: true,
+        outboxEventId: true,
+      },
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    // Resolve outbound kind from the related OutboxEvent.eventType — more
+    // robust than parsing the body, and keeps the formatter free to change.
+    const outboxIds = page
+      .map((m) => m.outboxEventId)
+      .filter((id): id is string => Boolean(id));
+    const outboxRows =
+      outboxIds.length === 0
+        ? []
+        : await this.prisma.outboxEvent.findMany({
+            where: { id: { in: outboxIds } },
+            select: { id: true, eventType: true },
+          });
+    const eventTypeById = new Map(outboxRows.map((e) => [e.id, e.eventType]));
+
+    const items = page.map((m) => ({
+      id: m.id,
+      direction: m.direction,
+      status: m.status,
+      body: m.body,
+      createdAt: m.createdAt,
+      sentAt: m.sentAt,
+      deliveredAt: m.deliveredAt,
+      kind: deriveMessageKind({
+        direction: m.direction,
+        outboxEventType: m.outboxEventId
+          ? eventTypeById.get(m.outboxEventId) ?? null
+          : null,
+        body: m.body,
+      }),
+    }));
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeMessagesCursor(last.createdAt, last.id) : null;
+
+    return { items, nextCursor };
   }
 
   async create(salonId: string, actorUserId: string, input: ClientCreateInput) {
@@ -137,6 +237,61 @@ export class ClientsService {
       throw mapKnownErrors(e, "Client");
     }
   }
+}
+
+function encodeMessagesCursor(createdAt: Date, id: string): string {
+  // Opaque from the caller's perspective. base64url so it survives URL
+  // encoding without needing extra escaping.
+  return Buffer.from(JSON.stringify({ c: createdAt.toISOString(), i: id })).toString(
+    "base64url",
+  );
+}
+
+function decodeMessagesCursor(
+  cursor: string,
+): { createdAt: Date; id: string } | null {
+  try {
+    const raw = Buffer.from(cursor, "base64url").toString("utf8");
+    const parsed = JSON.parse(raw) as { c?: unknown; i?: unknown };
+    if (typeof parsed.c !== "string" || typeof parsed.i !== "string") return null;
+    const createdAt = new Date(parsed.c);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.i };
+  } catch {
+    return null;
+  }
+}
+
+// Pill kind shown above the bubble. Inbound kind is detected by simple
+// keyword sniffing on the body — STOP/UNSUBSCRIBE per A2P 10DLC carrier
+// rules, plus a YES/Y heuristic that matches the confirmation prompt
+// vocabulary. Anything else stays a plain "reply".
+function deriveMessageKind(input: {
+  direction: MessageDirection;
+  outboxEventType: string | null;
+  body: string;
+}): string {
+  if (input.direction === MessageDirection.OUTBOUND) {
+    return (
+      (input.outboxEventType && OUTBOUND_KIND_BY_EVENT[input.outboxEventType]) ||
+      "outbound"
+    );
+  }
+  const trimmed = input.body.trim().toUpperCase();
+  if (
+    trimmed === "STOP" ||
+    trimmed === "UNSUBSCRIBE" ||
+    trimmed === "STOPALL" ||
+    trimmed === "CANCEL" ||
+    trimmed === "QUIT" ||
+    trimmed === "END"
+  ) {
+    return "opt_out";
+  }
+  if (trimmed === "Y" || trimmed === "YES" || trimmed === "CONFIRM") {
+    return "confirmed";
+  }
+  return "reply";
 }
 
 function clientSnapshot(c: {

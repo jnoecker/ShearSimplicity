@@ -7,6 +7,7 @@ import {
 } from "@/lib/appointment-status";
 import { ClientForm } from "../_components/client-form";
 import { updateClientAction, type FormState } from "../_actions";
+import { MessageHistory, type MessageRow } from "../_components/message-history";
 
 interface AppointmentRow {
   id: string;
@@ -38,7 +39,12 @@ export default async function ClientDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const client = await apiFetch<ClientDetail>(`/clients/${id}`);
+  const [client, messagesPage] = await Promise.all([
+    apiFetch<ClientDetail>(`/clients/${id}`),
+    apiFetch<{ items: MessageRow[]; nextCursor: string | null }>(
+      `/clients/${id}/messages`,
+    ),
+  ]);
 
   const action = async (
     state: FormState,
@@ -163,6 +169,19 @@ export default async function ClientDetailPage({
                 notes: client.notes,
               }}
             />
+          </Card>
+
+          <Card
+            title="Messages"
+            meta={
+              messagesPage.items.length === 0
+                ? "No SMS yet"
+                : messagesPage.nextCursor
+                  ? `Latest ${messagesPage.items.length} · more available`
+                  : `${messagesPage.items.length} on record`
+            }
+          >
+            <MessageHistory messages={messagesPage.items} />
           </Card>
 
           <Card

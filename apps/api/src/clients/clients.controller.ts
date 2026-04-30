@@ -8,9 +8,14 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { clientCreateSchema, clientUpdateSchema } from "@shearsimp/shared";
+import {
+  clientCreateSchema,
+  clientMessagesQuerySchema,
+  clientUpdateSchema,
+} from "@shearsimp/shared";
 import type {
   ClientCreateInput,
+  ClientMessagesQuery,
   ClientUpdateInput,
 } from "@shearsimp/shared";
 import { CurrentSalon } from "../tenant/current-salon.decorator";
@@ -40,6 +45,16 @@ export class ClientsController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ) {
     return this.clients.get(salon.salonId, id);
+  }
+
+  @Get(":id/messages")
+  listMessages(
+    @CurrentSalon() salon: ActiveSalon,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query(new ZodValidationPipe(clientMessagesQuerySchema))
+    query: ClientMessagesQuery,
+  ) {
+    return this.clients.listMessages(salon.salonId, id, query);
   }
 
   @Post()
